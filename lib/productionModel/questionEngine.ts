@@ -181,8 +181,8 @@ export function questionEngine(checklist: Checklist, record: RecordView, default
   if (defaults !== undefined && (!defaults || defaults.workspaceId !== record.workspaceId || !defaults.values || typeof defaults.values !== "object")) {
     throw new QuestionEngineError(NOT_HERE);
   }
-  /* Rule 2 again: another workspace's caps are refused, never read. */
-  if (caps !== undefined && (!caps || caps.workspaceId !== record.workspaceId || typeof caps.production !== "boolean" || typeof caps.workspace !== "boolean")) {
+  /* Rule 2 again: another workspace's caps are refused, never read; so are another production's. */
+  if (caps !== undefined && (!caps || caps.workspaceId !== record.workspaceId || caps.productionId !== record.productionId || typeof caps.production !== "boolean" || typeof caps.workspace !== "boolean")) {
     throw new QuestionEngineError(NOT_HERE);
   }
   const values: Record<string, string> = {};

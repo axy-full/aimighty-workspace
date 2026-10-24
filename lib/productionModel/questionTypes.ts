@@ -212,9 +212,9 @@ export type WorkspaceDefaults = { readonly workspaceId: string; readonly values:
  * Which caps are already set on this production and its workspace (owner, 25 Oct 2026, answer 3 (b)): whether each is set, never
  * a figure (film-record-schema A.0: the spend limit holds a reference to the cap). `production` is the production's own cap (H's
  * "Sets: production_cap"); `workspace` is the workspace's monthly limit (H's "Answered by: workspace_monthly_limit"). The engine
- * reads no money table, so the caller passes them. Bound to one workspace (rule 2). Not passed: no cap is set.
+ * reads no money table, so the caller passes them. Bound to one workspace (rule 2) and to this production. Not passed: no cap is set.
  */
-export type CapsSet = { readonly workspaceId: string; readonly production: boolean; readonly workspace: boolean };
+export type CapsSet = { readonly workspaceId: string; readonly productionId: string; readonly production: boolean; readonly workspace: boolean };
 
 /** The person answering, by their role in the workspace (lib/tenant.ts), where a row's answer depends on it (`raises`). */
 export type Answerer = { readonly role: WorkspaceRole };
