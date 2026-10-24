@@ -1,3 +1,4 @@
+import { FILM_TYPE_ID } from "./filmTypes";
 import type { AboveFloorRow, Checklist, FloorRow, Pill, PillSet, Prefill } from "./questionTypes";
 
 /**
@@ -30,7 +31,13 @@ const BRIEF_FLOOR: readonly FloorRow[] = [
     shape: "pick_one",
     /* H: "Ad · Short film · Social · Music video · Other (the ten kinds behind Other)". The ids are lib/productionModel/filmTypes.ts's
        film type ids; the field takes any of the other kinds. H marks no default: the + menu's choice usually answers it. */
-    pills: pillSet(null, { id: "ad_film", copy: "kindAd" }, { id: "short_film", copy: "kindShortFilm" }, { id: "social", copy: "kindSocial" }, { id: "music_video", copy: "kindMusicVideo" }),
+    pills: pillSet(
+      null,
+      { id: FILM_TYPE_ID.adFilm, copy: "kindAd" },
+      { id: FILM_TYPE_ID.shortFilm, copy: "kindShortFilm" },
+      { id: FILM_TYPE_ID.social, copy: "kindSocial" },
+      { id: FILM_TYPE_ID.musicVideo, copy: "kindMusicVideo" },
+    ),
     field: true,
     answeredBy: ["plus_menu", "brief_document"],
     sets: ["rail", "genre_set", "defaults"],
@@ -47,9 +54,9 @@ const BRIEF_FLOOR: readonly FloorRow[] = [
     pills: {
       by: "kind",
       sets: {
-        ad_film: pillSet("30s", { id: "15s", copy: "sec15" }, { id: "30s", copy: "sec30" }, { id: "60s", copy: "sec60" }),
-        short_film: pillSet("3min", { id: "1min", copy: "min1" }, { id: "3min", copy: "min3" }, { id: "5min", copy: "min5" }),
-        social: pillSet("15s", { id: "6s", copy: "sec6" }, { id: "15s", copy: "sec15" }, { id: "30s", copy: "sec30" }),
+        [FILM_TYPE_ID.adFilm]: pillSet("30s", { id: "15s", copy: "sec15" }, { id: "30s", copy: "sec30" }, { id: "60s", copy: "sec60" }),
+        [FILM_TYPE_ID.shortFilm]: pillSet("3min", { id: "1min", copy: "min1" }, { id: "3min", copy: "min3" }, { id: "5min", copy: "min5" }),
+        [FILM_TYPE_ID.social]: pillSet("15s", { id: "6s", copy: "sec6" }, { id: "15s", copy: "sec15" }, { id: "30s", copy: "sec30" }),
       },
     },
     field: true,
@@ -174,7 +181,7 @@ function deepFreeze<T>(value: T): T {
 
 /** The Ad film's Brief checklist. Frozen: every engine reads the same rows and none can change them for another. */
 export const AD_FILM_BRIEF: Checklist = deepFreeze({
-  filmType: "ad_film",
+  filmType: FILM_TYPE_ID.adFilm,
   step: "brief",
   floor: BRIEF_FLOOR,
   aboveFloor: BRIEF_ABOVE_FLOOR,
