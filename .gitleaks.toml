@@ -1,0 +1,50 @@
+# Secret scan settings, read by CI from the commit a change starts from, not from the change (CI job `secrets`, .github/workflows/verify.yml; docs/ci.md).
+# Starts from gitleaks' default rules. The allowlist below is path-specific and holds only files that carry fake values on purpose
+# or content hashes. Never add app code, lib/, app/, scripts' real config or .env patterns here: change the code instead.
+title = "Particl secret scan"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Content hashes of the bundled open-source encoder's files (not secrets)"
+paths = ['''^public/open-source/aac-1\.56\.2-particl\.1-provenance\.json$''']
+
+[[allowlists]]
+description = "Fake values this spec feeds to a redaction or signing check on purpose"
+condition = "AND"
+regexTarget = "match"
+paths = ['''^tests/unit/atomikModelPolicy\.spec\.ts$''']
+regexes = [
+  '''sk\-unit\-auto\-openai\-only''',
+]
+
+[[allowlists]]
+description = "Fake values this spec feeds to a redaction or signing check on purpose"
+condition = "AND"
+regexTarget = "match"
+paths = ['''^tests/unit/noVendorCostToCustomers\.spec\.ts$''']
+regexes = [
+  '''sk\-live0123456789abcdef''',
+  '''sk\-private1234567890abcdefghijklmnop''',
+]
+
+[[allowlists]]
+description = "Fake values this spec feeds to a redaction or signing check on purpose"
+condition = "AND"
+regexTarget = "match"
+paths = ['''^tests/unit/providerBillingOutcome\.spec\.ts$''']
+regexes = [
+  '''sk\-live_abcdefghijklmnop1234''',
+  '''sk\-unitfixture1234567890secret''',
+]
+
+[[allowlists]]
+description = "Fake values this spec feeds to a redaction or signing check on purpose"
+condition = "AND"
+regexTarget = "match"
+paths = ['''^tests/unit/storageBackendR2\.spec\.ts$''']
+regexes = [
+  '''AKIAIOSFODNN7EXAMPLE''',
+  '''wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY''',
+]
