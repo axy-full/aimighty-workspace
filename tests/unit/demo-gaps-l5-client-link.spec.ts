@@ -286,7 +286,8 @@ test("a client link and a share link are built on APP_ORIGIN when it is set (beh
  * Every client-facing route, for both kinds of link (a Crew review link and an older Approved-takes link), probed with
  * the same leak list and the exact "1234" rule: the page's data, a comment, a decision, a take's bytes and its file
  * name, the logo, and every refusal, before and after the link is withdrawn. The client page (app/review/[token])
- * draws only what these routes return.
+ * draws only what these routes return; its metadata (layout.tsx) reads only the production's and workspace's names,
+ * which the page already shows.
  */
 test("every client-facing route, on both kinds of link, leaks no prompt, person, team note, other link's words, engine, balance or other production", async () => {
   await seed();

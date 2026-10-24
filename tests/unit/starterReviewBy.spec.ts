@@ -7,8 +7,9 @@ import ts from "typescript";
 
 /**
  * The starter production's approved demo take records WHO approved it as a display name, the way every other writer does (`review_by` is a name; the account id
- * stays in `created_by`). A member who seeds it is named by their name on the Library's take and on a legacy client review link, never by their account id.
- * The platform owner, in a client workspace, still reads "Particl support". Real temporary databases; sign-in is a fake; nothing is sent or spent.
+ * stays in `created_by`). A member who seeds it is named by their name on the Library's take, never by their account id; the platform owner, in a client
+ * workspace, still reads "Particl support" there. A legacy client review link names no one at all (SOW-report #59): no approvedBy, no name, no id.
+ * Real temporary databases; sign-in is a fake; nothing is sent or spent.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "starter-review-by-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -86,26 +87,29 @@ async function seededBy(name: string, seeder: Who) {
     return (body.generations ?? []).filter((j) => j.reviewState === "approved");
   });
   const { token } = await as(seeder, () => shares.mintShare({ workspaceId: ws.id, projectId: row.projectId, by: seeder.name, actorId: seeder.id }));
-  const page = (await (await reviewRoute.GET(new Request(`http://x/api/review/${token}`), { params: Promise.resolve({ token }) })).json()) as { takes: { approvedBy: string | null }[] };
-  return { row, list, guest: page.takes.map((t) => t.approvedBy) };
+  const page = (await (await reviewRoute.GET(new Request(`http://x/api/review/${token}`), { params: Promise.resolve({ token }) })).json()) as { takes: Record<string, unknown>[] };
+  return { row, list, guest: page.takes, guestText: JSON.stringify(page) };
 }
 
-test("seeded by a member: the approved demo take names the member, never their account id, in the Library's list and on a legacy client review link; created_by stays the id", async () => {
-  const { row, list, guest } = await seededBy("member", MEMBER);
+test("seeded by a member: the approved demo take names the member, never their account id, in the Library's list; a legacy client review link names no one; created_by stays the id", async () => {
+  const { row, list, guest, guestText } = await seededBy("member", MEMBER);
   expect(row.approved.length).toBeGreaterThan(0);
   for (const r of row.approved) { expect(r.reviewBy).toBe(MEMBER.name); expect(r.createdBy).toBe(MEMBER.id); }
   expect(list.length).toBeGreaterThan(0);
   for (const j of list) { expect(j.reviewBy).toBe(MEMBER.name); expect(j.reviewBy).not.toMatch(/^usr_/); }
   expect(guest.length).toBeGreaterThan(0);
-  for (const by of guest) { expect(by).toBe(MEMBER.name); expect(by).not.toMatch(/^usr_/); }
+  for (const t of guest) expect("approvedBy" in t).toBe(false);
+  for (const who of [MEMBER.name, MEMBER.id, "Particl support"]) expect(guestText).not.toContain(who);
+  expect(guestText).not.toMatch(/usr_/);
 });
 
-test("seeded by the platform owner in a client workspace: it still reads Particl support", async () => {
-  const { row, list, guest } = await seededBy("root", ROOT);
+test("seeded by the platform owner in a client workspace: it still reads Particl support in the Library; a legacy client review link names no one", async () => {
+  const { row, list, guest, guestText } = await seededBy("root", ROOT);
   expect(row.approved.length).toBeGreaterThan(0);
   expect(list.length).toBeGreaterThan(0);
   for (const r of row.approved) expect(r.reviewBy).toBe("Particl support");
   for (const j of list) expect(j.reviewBy).toBe("Particl support");
-  for (const by of guest) expect(by).toBe("Particl support");
   expect(guest.length).toBeGreaterThan(0);
+  for (const t of guest) expect("approvedBy" in t).toBe(false);
+  for (const who of ["Particl support", ROOT.name, ROOT.id, ROOT_EMAIL]) expect(guestText).not.toContain(who);
 });
