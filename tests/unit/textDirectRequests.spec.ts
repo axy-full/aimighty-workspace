@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { HIGH, LOW, MEDIUM, OPENAI_IDS, OTHER_CLAUDE } from '../helpers/thinkingSlots';
 import { generateText, tool } from 'ai';
 import { z } from 'zod';
 import { runInTenant, type TenantWorkspace } from '../../lib/tenant';
@@ -8,7 +9,7 @@ import { textPost } from '../../lib/textDirect';
 import { ANTHROPIC_NO_TOOL_HEADER, DIRECT_MODEL_IDS, directModelId, textRouteWorks } from '../../lib/textRoute';
 import { catalog, menuFor, routableTextModelIds } from '../../lib/catalog';
 import { DEFAULT_TEXT_MODELS, TEXT_MODEL_IDS } from '../../lib/platformLayer';
-import { ATOMIK_AUTO_MODEL_IDS, selectAtomikModel } from '../../lib/atomikModelPolicy';
+import { ATOMIK_THINKING, selectAtomikThinking } from '../../lib/atomikModelPolicy';
 import { ENHANCER_MODELS } from '../../lib/shell/enhancer';
 
 /*
@@ -226,16 +227,32 @@ test('without the gateway, the static catalogue, Atomik and the enhancer offer t
   const GEMINI_DIRECT = ['google/gemini-3-flash', 'google/gemini-3.1-pro-preview', 'google/gemini-3.5-flash-lite', 'google/gemini-3.6-flash'];
   expect(ids.filter(id => !id.startsWith('anthropic/')).sort()).toEqual(GEMINI_DIRECT);
   const planner = await menuFor('planner');
-  expect(planner.featured.slice(0, 2).map(m => m.id)).toEqual(['anthropic/claude-sonnet-5.5', 'anthropic/claude-opus-5.5']);
+  /* The planner's menu is the slots' models, High to Low (three Claude models only, owner, 23 Oct 2026). */
+  expect(planner.featured.map(m => m.id)).toEqual([HIGH, MEDIUM, LOW]);
   expect([...planner.featured, ...planner.rest].map(m => m.id).filter(id => /claude-(?:opus|sonnet|haiku)-4/.test(id))).toEqual([]);
-  expect([...planner.featured, ...planner.rest].map(m => m.id)).toEqual(expect.arrayContaining(['anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5']));
-  expect(selectAtomikModel('auto', ids)).toBe('anthropic/claude-sonnet-5.5');
+  expect([...planner.featured, ...planner.rest].map(m => m.id)).toEqual([HIGH, MEDIUM, LOW]);
+  /* Atomik's thinking at each setting is served on the direct Claude door. */
+  const served = (await catalog(true)).filter(m => m.type === 'language');
+  for (const setting of ['high', 'medium', 'low'] as const) expect(selectAtomikThinking(setting, 'plan', served)?.model, setting).toBe(ATOMIK_THINKING[setting].model);
   expect(ENHANCER_MODELS.claude.filter(id => ids.includes(id)).slice(0, 2)).toEqual(['anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5']);
-  // Priced from Anthropic's list: Opus 5.5 $4 / $20, Sonnet 5.5 $2 / $10, Haiku 5.5 $0.10 / $0.50 up to 100k prompt tokens.
+  /* No vendor rate is written in a public file (owner, 23 Oct 2026): the rates are read from the catalogue and only their order is
+     asserted. A cache read costs less than input, and a cache write more. */
   const priced = new Map((await catalog(true)).map(m => [m.id, m.pricing]));
-  expect(priced.get('anthropic/claude-opus-5.5')).toMatchObject({ input: '0.000004', output: '0.00002', input_cache_read: '0.0000002', input_cache_write: '0.000005' });
-  expect(priced.get('anthropic/claude-sonnet-5.5')).toMatchObject({ input: '0.000002', output: '0.00001', input_cache_read: '0.0000001', input_cache_write: '0.0000025' });
-  expect(priced.get('anthropic/claude-haiku-5.5')).toMatchObject({ input: '0.0000001', output: '0.0000005' });
+  for (const id of ['anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5']) {
+    const p = priced.get(id) as Record<string, unknown>;
+    expect(Number(p.input_cache_read), id).toBeLessThan(Number(p.input));
+    expect(Number(p.input_cache_write), id).toBeGreaterThan(Number(p.input));
+  }
+  /* The three Claude pricing rows, pinned without stating them: any change to a figure in lib/modelCatalog.json (10x off,
+     swapped, an older model's rates copied over) fails here until the new figures are checked against the vendor and this
+     hash is updated on purpose. */
+  {
+    const { snapshotModels: rowsOf } = await import('../../lib/catalog');
+    const { createHash } = await import('node:crypto');
+    const ids = ['anthropic/claude-opus-5.5', 'anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5'];
+    const rows = JSON.stringify(ids.map(id => [id, rowsOf().find(m => m.id === id)?.pricing]));
+    expect(createHash('sha256').update(rows).digest('hex')).toBe('90620a4dfc925a2d74055f4888ed95702665944fdf86d11fcdda0ea0824f72bb');
+  }
   // And as the catalogue snapshot states each (lib/modelCatalog.json): every rate a direct Claude call settles at is there and positive, Opus above Sonnet
   // above Haiku for input and output, and Haiku 5.5's flat rate is its first prompt tier's.
   const { snapshotModels } = await import('../../lib/catalog');
@@ -261,12 +278,14 @@ test('without the gateway, the static catalogue, Atomik and the enhancer offer t
   expect(await textIds()).toEqual([]);
 });
 
-test('defaults: enhancement, ideas and shots on Opus 5.5 (the owner, 16 Oct 2026, for enhancement); Auto tries Sonnet 5.5, then Opus 5.5', () => {
+test('defaults: enhancement, ideas and shots on the owner\'s enhancement default (16 Oct 2026); Atomik thinks at the Medium slot by default', () => {
   expect(DEFAULT_TEXT_MODELS).toEqual({ enhance: 'anthropic/claude-opus-5.5', idea: 'anthropic/claude-opus-5.5', shot: 'anthropic/claude-opus-5.5' });
-  expect(ATOMIK_AUTO_MODEL_IDS.slice(0, 2)).toEqual(['anthropic/claude-sonnet-5.5', 'anthropic/claude-opus-5.5']);
-  expect(selectAtomikModel('auto', ['anthropic/claude-opus-5.5', 'openai/gpt-5.5'])).toBe('anthropic/claude-opus-5.5');
-  expect(selectAtomikModel('auto', ['anthropic/claude-sonnet-4.6', 'anthropic/claude-sonnet-5', 'openai/gpt-5.5'])).toBe('anthropic/claude-sonnet-5');
-  expect(selectAtomikModel('auto', ['anthropic/claude-sonnet-4.6', 'openai/gpt-5.5'])).toBe('openai/gpt-5.5');
+  /* Auto's list is gone (owner, 22 Oct 2026): the setting's model runs; without it, only a Claude model no dearer than it, never OpenAI (these entries carry no price, so none qualifies). */
+  const entry = (id: string) => ({ id, name: id, owner: id.split('/')[0], type: 'language' as const, description: '', contextWindow: 200_000, maxTokens: 8_000, pricing: null });
+  expect(selectAtomikThinking('medium', 'plan', [MEDIUM, OPENAI_IDS[0]].map(entry))?.model).toBe(MEDIUM);
+  expect(selectAtomikThinking('medium', 'plan', [OTHER_CLAUDE[0], LOW, OPENAI_IDS[0]].map(entry))).toBeNull();
+  expect(selectAtomikThinking('medium', 'plan', [OTHER_CLAUDE[0], OPENAI_IDS[0]].map(entry))).toBeNull();
+  expect(selectAtomikThinking('medium', 'plan', [OPENAI_IDS[0]].map(entry))).toBeNull();
   for (const id of Object.values(DEFAULT_TEXT_MODELS)) expect(TEXT_MODEL_IDS).toContain(id);
   expect(TEXT_MODEL_IDS).toEqual(expect.arrayContaining(['openai/gpt-5.5', 'openai/gpt-5.4', 'spacexai/grok-4.7', 'google/gemini-3.6-flash']));
 });

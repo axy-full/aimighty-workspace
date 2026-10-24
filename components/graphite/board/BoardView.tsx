@@ -38,6 +38,8 @@ import { madeCards, type MadeEntry } from "./cards/set-board";
 import { ShotList } from "./cards/board/ShotList";
 import type { BoardCtx, BoardSelection } from "./cards/types";
 import { EmptyBoard } from "./EmptyBoard";
+import { attachedRenames, bindCastIdentity, castNamesOf, parkedPass, staleAttached } from "./cards/cast/cast-model";
+import { dropParked, parkBind, renameAttached, takeParked, useParked } from "./cards/cast/parked-binds";
 import { HoverCluster } from "./HoverCluster";
 import { BoardInspector } from "./inspector";
 import { GapOverlays } from "./GapOverlays";
@@ -143,6 +145,9 @@ const inField = (target: EventTarget | null) => {
   return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 };
 
+/* The renamed-card binds already told in this tab: said once, then the card itself says it. */
+const RENAMED_TOLD = new Set<string>();
+
 function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
   useEffect(() => markBoardOpen(), []);
   const rig = useRig();
@@ -173,6 +178,46 @@ function Board({ scope, items, kind: asked, frame, region }: BoardViewProps) {
     && (lift.productionId == null || lift.productionId === (project.productionProjectId ?? null));
   /* A teammate's board opens view-only (lib/workbench/team-boards.ts): the stage header says whose it is, and every control that honours `readOnly` is off. */
   const viewing = rig.viewOnly ? viewOnlyLine(rig.viewOnly.owner.name) : null;
+  /* A training pressed in this production whose reply landed while another was open: its bind was parked (review 3 of
+     #888, R3-1) and is made now that this production is open, so its card follows the training and offers no Train
+     press for it. A bind the board can't take now stays parked. */
+  const openId = rig.status === "ready" && !rig.viewOnly ? rig.project?.id ?? null : null;
+  /* Once per opening of a production, and again whenever a cast member's name changes (a card renamed back to the name
+     it was pressed under binds then, in the same opening): a bind kept parked is not tried again on every render. */
+  const castNames = castNamesOf(rig.project);
+  /* An attached record that no longer guards anything (another identity bound by any route, the entry id reused under
+     another name, the card gone) is dropped (R8-1). Writes only when one is stale. */
+  const parkedAll = useParked(openId ? scope : null);
+  useEffect(() => {
+    if (!openId || !rig.project) return;
+    for (const p of staleAttached(rig.project, parkedAll)) dropParked(scope, p.identityId);
+    for (const r of attachedRenames(rig.project, parkedAll)) renameAttached(scope, r.identityId, r.name);
+  }, [openId, rig.project, parkedAll, scope]);
+  const parkedDoneFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!openId) { parkedDoneFor.current = null; return; }
+    const pass = `${openId}\u0002${castNames}`;
+    if (parkedDoneFor.current === pass) return;
+    parkedDoneFor.current = pass;
+    if (!rig.project) return;
+    const parked = takeParked(scope, openId);
+    if (!parked.length) return;
+    /* A cast member renamed since the press is not given the identity: the bind stays parked, its card says the
+       training was started for its old name, with Attach and Not this card (R5-2, R6-1). */
+    const sorted = parkedPass(rig.project, parked);
+    for (const bind of sorted.renamed) {
+      parkBind(scope, bind, bind.at);
+      if (!RENAMED_TOLD.has(bind.identityId)) {
+        RENAMED_TOLD.add(bind.identityId);
+        ws.toast(`Training started for ${bind.name ?? "a cast member"}, whose card was renamed. On that card: Attach, or Not this card.`);
+      }
+    }
+    let made = false;
+    for (const bind of sorted.bind) {
+      if (rig.apply((p) => bindCastIdentity(p, bind, bind.identityId))) parkBind(scope, bind, bind.at); else made = true;
+    }
+    if (made) void rig.save();
+  }, [openId, castNames, scope, rig, ws]);
   const gate = useMemo(() => ({ exploreOnly: liftedHere ? null : onSample.exploreOnly ?? spendOff, readOnly: viewing ?? onSample.readOnly }), [liftedHere, onSample, spendOff, viewing]);
   /* While it is lifted the board's line says so (for anyone else its paid controls stay closed in the sample's words). */
   const pill = lift?.lifted && gate.exploreOnly !== CHECK_LINE ? LIFT_LINE : gate.exploreOnly;

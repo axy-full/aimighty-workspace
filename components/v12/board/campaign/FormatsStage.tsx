@@ -54,7 +54,7 @@ export function FormatsStage({ ctx }: { ctx: BoardCtx }) {
               <span className="v12-sp-eyebrow">Skill</span>
               <h3 className="v12-sp-title">{format.title}</h3>
               <p className="v12-cp-line">{off ?? format.line}</p>
-              {format.person && !off ? <p className="v12-sp-why" data-testid="v12-format-consent">A real person’s face needs a consent record. A generated presenter is an adult.</p> : null}
+              {format.person && !off ? <p className="v12-sp-why" data-testid="v12-format-consent">A real person’s face carries a consent tick. A generated presenter is an adult.</p> : null}
               <div className="v12-cp-foot">
                 {off ? <span className="v12-sp-state" data-testid="v12-format-state">{format.notBuilt ? "Not built yet" : "Doesn’t apply"}</span> : (
                   <>

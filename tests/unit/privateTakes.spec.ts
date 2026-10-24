@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { FAST_STILL_ENGINE } from "../helpers/runtimeIds";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -231,7 +232,7 @@ test("GET /api/usage: a private board's render stays in the spend and loses its 
   const { platformDb, platformReady } = await import("../../lib/platform");
   const { creditUsage } = await import("../../lib/creditUsage");
   await platformReady(); await alignLedgerUnit();
-  const meter = (id: string, projectId: string | null, credits: number, at: number) => platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,project_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,?,'image','google','gemini-3.1-flash-image','succeeded',0.01,?,1,'u_owner',?,?)", args: [id, ws.id, projectId, credits, at, at] });
+  const meter = (id: string, projectId: string | null, credits: number, at: number) => platformDb().execute({ sql: "INSERT INTO meter_events(id,workspace_id,project_id,kind,engine,model,status,engine_cost_usd,billed_credits,paid_by_platform,created_by,created_at,updated_at) VALUES(?,?,?,'image','google',?,'succeeded',0.01,?,1,'u_owner',?,?)", args: [id, ws.id, projectId, FAST_STILL_ENGINE, credits, at, at] });
   await meter(`t_priv1_${run}`, projects.private, 12, 80); await meter(`t_shared_${run}`, projects.shared, 5, 70); await meter(`t_open_${run}`, "prod_open", 3, 50);
   /* A take moved into the private board after its meter line was written: the line still names the ordinary production, the take is in the private board now. */
   await meter(`t_priv2_${run}`, "prod_open", 7, 90);
@@ -371,11 +372,14 @@ test("a member's real turn on a private board's chat writes the placeholder nowh
   await tenant.runInTenant(ws, () => database.db().execute("DELETE FROM settings WHERE key='sampleProduction'"), { user: user("u_owner") });
   const turn = loadRoute<typeof import("../../app/api/atomik/[id]/route")>("app/api/atomik/[id]/route.ts", () => MATE);
   const headers = { "Content-Type": "application/json", "X-Workbench-Scope": `particl-active-${ws.id}-${MATE.user.id}` };
+  /* Atomik's thinking reads the checked-in catalogue (the slots are picked from it), never the gateway's live list; put back after the turn. */
+  const priorCatalog = process.env.MODEL_CATALOG;
+  process.env.MODEL_CATALOG = "static";
   const res = await tenant.runInTenant(ws, async () => {
     const chat = await atomik.createChat({ userId: MATE.user.id, projectId: projects.private, model: "auto", agentMode: "ask" });
     const out = await turn.POST(new Request(`https://particl.test/api/atomik/${chat}`, { method: "POST", headers, body: JSON.stringify({ text: "remember that the board is green", maxCredits: 50 }) }) as never, { params: Promise.resolve({ id: chat }) });
     return [out.status, await out.text()] as const;
-  }, { user: MATE.user });
+  }, { user: MATE.user }).finally(() => { if (priorCatalog === undefined) delete process.env.MODEL_CATALOG; else process.env.MODEL_CATALOG = priorCatalog; });
   expect(res[0], res[1].slice(0, 200)).toBe(200);
   /* The turn did spend and record (a planning line in the meter), against no project. */
   const lines = (await platformDb().execute({ sql: "SELECT project_id,kind FROM meter_events WHERE workspace_id=?", args: [ws.id] })).rows;

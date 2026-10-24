@@ -116,7 +116,8 @@ export function meteredEngine(kind: string, engine: string, model: string): stri
   if (isAstraComputeEngine(engine)) return "3D blocking render";
   if (model === GROK_STT_MODEL) return "Transcription";
   if (kind === "training") return "Identity training";
-  if (kind === "text") return `Atomik · ${modelLabel(model)}`;
+  /* Atomik's thinking never names its model on a ledger line (Amendment (iii) §E); the meter row keeps it. */
+  if (kind === "text") return "Atomik · Thinking";
   return modelLabel(model);
 }
 

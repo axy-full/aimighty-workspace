@@ -17,8 +17,9 @@ import type { Asset } from "../lib/workbench/studio";
  * the phone sizes with that reason. (Brand, Product, Format and the cards:
  * suites-business-own-workbench.spec.ts.)
  */
-const MODEL = "anthropic/claude-sonnet-4.6";
-const MODELS = [{ id: MODEL, name: "Claude Sonnet 4.6", vision: true, efforts: [{ value: "high", label: "High" }, { value: "low", label: "Low" }] }];
+/* What the server says a job ran on: Atomik, never a model (docs/atomik-model-policy.md). */
+const MODEL = "atomik";
+/* The menu the server sends: none (the thinking models are never disclosed; docs/atomik-model-policy.md), only that one is connected. */
 const VIDEO = readFileSync("tests/fixtures/astra-source.mp4");
 
 type Agent = { jobs: Record<string, unknown>[]; quotes: Record<string, unknown>[]; paid: Record<string, unknown>[]; frames: string[]; failing: boolean };
@@ -36,7 +37,7 @@ async function mockAgent(page: Page, estimate: number, failing = false): Promise
     if (request.method() === "GET") {
       if (agent.failing) return route.fulfill({ status: 503, json: { error: "Atomik could not read this project’s runs." } });
       const requestId = url.searchParams.get("requestId");
-      return route.fulfill({ json: requestId ? { jobs: agent.jobs.filter((job) => job.requestId === requestId) } : { configured: true, models: MODELS, defaultModel: MODEL, jobs: agent.jobs } });
+      return route.fulfill({ json: requestId ? { jobs: agent.jobs.filter((job) => job.requestId === requestId) } : { configured: true, models: [], jobs: agent.jobs } });
     }
     const body = request.postDataJSON() as Record<string, unknown> & { requestId: string; projectId: string; request: string; referenceAd?: { assetId: string; sourceKey: string }; videoFrames?: { uploadId: string; timeSeconds: number }[] };
     if (body.quoteOnly) { agent.quotes.push(body); return route.fulfill({ json: { model: MODEL, effort: body.effort, estimateCredits: estimate } }); }
@@ -105,7 +106,9 @@ test("Hooks: twelve lines kept by hand; the Campaign agent is priced at about N 
   await run.click();
   await expect(dialog).toHaveCount(0);
   expect(agent!.paid).toHaveLength(1);
-  expect(agent!.paid[0]).toMatchObject({ maxCredits: 3, model: MODEL });
+  /* The press carries the approved ceiling; the model that runs is Atomik's thinking, decided on the server (Amendment (iii) §E): the quote's model is not echoed back. */
+  expect(agent!.paid[0]).toMatchObject({ maxCredits: 3 });
+  expect(agent!.paid[0].model).toBe("auto");
 
   const result = page.getByTestId("hooks-run");
   await expect(result).toContainText("Salt, not sugar.");

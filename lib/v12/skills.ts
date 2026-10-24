@@ -33,7 +33,7 @@ export const slugFor = (title: string): string => title.toLowerCase().replace(/[
  * Registry gaps (rule 11): none of these is a tool in the registry yet (A1 is not built). Each is a button-and-bar item on
  * today's paths until its tool exists; the names below are the ones to give them.
  *   // registry-gap: campaign_format_product_video_ad  (Make brief motion-orbit, video, /api/generate)
- *   // registry-gap: campaign_format_talking_review    (Make brief ugc-presenter, video, /api/generate; consent record)
+ *   // registry-gap: campaign_format_talking_review    (Make brief ugc-presenter, video, /api/generate; consent tick)
  *   // registry-gap: campaign_format_unboxing          (Make brief ugc-silent, video, /api/generate)
  *   // registry-gap: campaign_format_try_on            (Make brief editorial-model, stills, /api/generate; "quoted")
  *   // registry-gap: campaign_format_tutorial          (Make brief ugc-faceless, video, /api/generate)

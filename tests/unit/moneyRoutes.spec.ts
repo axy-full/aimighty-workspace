@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { VIDEO_ENGINE } from "../helpers/runtimeIds";
 import { alignLedgerUnit } from "../helpers/ledgerUnit";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -97,9 +98,9 @@ test("Usage and its summary keep hidden takes and chats as spent, and a reading 
     await ready();
     const take = `INSERT INTO generations(id,model,prompt,params,status,created_at,updated_at,kind,provider,cost_usd,refine_model,refine_cost_usd,deleted) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`;
     await db().batch([
-      { sql: take, args: ["money-g1", "dreamina-seedance-2-5-260628", "one", JSON.stringify({ resolution: "720p", ratio: "16:9", duration: 4, steps: 12, paidClaim: { token: "private-test-claim" }, credentialFingerprint: "private-test-fingerprint", providerPoll: { token: "private-test-poll" } }), "succeeded", reading - 1_000, reading - 1_000, "video", "byteplus", 1, null, null, 0] },
-      { sql: take, args: ["money-g2", "dreamina-seedance-2-5-260628", "two", "{}", "succeeded", reading - 1_000, reading - 1_000, "video", "byteplus", 0.5, null, null, 1] },
-      { sql: take, args: ["money-g3", "dreamina-seedance-2-5-260628", "three", "{}", "queued", reading + 1_000, reading + 1_000, "video", "byteplus", null, "anthropic/claude-test", 0.03, 1] },
+      { sql: take, args: ["money-g1", VIDEO_ENGINE, "one", JSON.stringify({ resolution: "720p", ratio: "16:9", duration: 4, steps: 12, paidClaim: { token: "private-test-claim" }, credentialFingerprint: "private-test-fingerprint", providerPoll: { token: "private-test-poll" } }), "succeeded", reading - 1_000, reading - 1_000, "video", "byteplus", 1, null, null, 0] },
+      { sql: take, args: ["money-g2", VIDEO_ENGINE, "two", "{}", "succeeded", reading - 1_000, reading - 1_000, "video", "byteplus", 0.5, null, null, 1] },
+      { sql: take, args: ["money-g3", VIDEO_ENGINE, "three", "{}", "queued", reading + 1_000, reading + 1_000, "video", "byteplus", null, "test/text", 0.03, 1] },
       { sql: `INSERT INTO atomik_chats(id,created_at,updated_at,deleted,text_cost_usd) VALUES('money-c1',?,?,1,0.2)`, args: [reading, reading] },
       { sql: `INSERT INTO atomik_messages(id,chat_id,role,cost_usd,created_at) VALUES('money-m1','money-c1','assistant',0.2,?)`, args: [reading + 1_000] },
     ]);
@@ -144,6 +145,9 @@ async function writerRoutes(ws: TenantWorkspace, text: string) {
     "@/lib/draftProject": await import("../../lib/draftProject"),
     "@/lib/security/people-only": await import("../../lib/security/people-only"),
     "@/lib/atomik": { requestEffort: () => undefined, resolveModel: async () => "test/text" },
+    /* Every run of Atomik's thinking is ours (lib/atomikThinking › thinkingRun never says otherwise); the stubbed model offers no effort, so none is sent. */
+    "@/lib/atomikThinking": { thinkingRun: async () => ({ ours: true }) },
+    "@/lib/atomikModelPolicy": await import("../../lib/atomikModelPolicy"),
     "@/lib/gateway": { gatewayReachable: () => true },
     "@/lib/language-provider": { languageReachable: () => true },
     "@/lib/studio": await import("../../lib/studio"),

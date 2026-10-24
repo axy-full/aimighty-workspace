@@ -6,15 +6,15 @@ import { ConsentForm } from "./ConsentForm";
 import "./security.css";
 
 /**
- * The consent step over the board (Gaps A, "?view=board&gap=identity&state=consent"): a dialog on a scrim, drawn on
- * the page rather than inside the canvas so the board's zoom never scales it. Escape or the scrim closes it; nothing
- * is kept until Record consent is pressed.
+ * The consent tick's details over the board (Gaps A, "?view=board&gap=identity&state=consent"): a dialog on a scrim,
+ * drawn on the page rather than inside the canvas so the board's zoom never scales it. It opens on the live tick when
+ * there is one. Escape or the scrim closes it; nothing is kept until Save is pressed.
  */
 const halt = (e: { stopPropagation: () => void }) => e.stopPropagation();
 
 export function ConsentDialog(props: {
   scope: string; projectId: string; subjectKey: string; subjectLabel: string;
-  onDone: (consent: ConsentRecord) => void; onClose: () => void;
+  onDone: (consent: ConsentRecord | null) => void; onClose: () => void;
 }) {
   const { onClose } = props;
   useEffect(() => {

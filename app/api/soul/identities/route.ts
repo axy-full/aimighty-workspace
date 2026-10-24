@@ -58,19 +58,20 @@ export const POST = withTenant(
   async (request: Request) => {
     const got = await requireRender();
     if (got.response) return got.response;
-    /* Training on a likeness records that the person consented (consent_at), and recording consent is people-only:
-       an API or MCP token, of any scope, and Atomik's agent identities are refused (lib/security/people-only.ts). */
+    /* Training is a person's priced press, as it has always been here: an API or MCP token, of any scope, and Atomik's
+       agent identities are refused (lib/security/people-only.ts). So the tick it may carry is only ever a person's. */
     if (!isPerson({ user: got.user, token: got.token }))
       return Response.json({ error: PEOPLE_ONLY }, { status: 403, headers });
     /* The sample workspace spends nothing: answered before the request is claimed. */
     { const off = await sampleWorkspaceOff(); if (off) return off; }
-    /* Every training cites a live consent record (review of #558, M1): for the production the request names, the same
-       cast member, allowing identity training. Checked, and refused in words, before anything is claimed or sent. */
+    /* A tick, not a gate (owner, 23 Oct 2026): a training that cites a live tick for the production it names and the same
+       cast member is linked to it; one that cites none, or a withdrawn or ended one, trains all the same. Only a
+       malformed citation is refused, in words, before anything is claimed or sent (review of #558, M1). */
     const peek = (await request.clone().json().catch(() => null)) as (CreateSoulIdentityInput & { consentId?: unknown; subjectKey?: unknown }) | null;
     if (!peek || typeof peek !== "object") return Response.json({ error: "Send a valid identity request." }, { status: 400, headers });
-    let consentId: string;
+    let tick: Awaited<ReturnType<typeof consentForTraining>>;
     try {
-      consentId = (await consentForTraining(peek.consentId, await projectKeysFor(peek.projectId, got.user.id), peek.subjectKey)).id;
+      tick = await consentForTraining(peek.consentId, await projectKeysFor(peek.projectId, got.user.id), peek.subjectKey);
     } catch (error) {
       if (error instanceof ConsentError) return Response.json({ error: error.message }, { status: error.status, headers });
       throw error;
@@ -78,14 +79,16 @@ export const POST = withTenant(
     return withGenerationRequest(request, got.user.id, async (claim) => {
       try {
         const body = (await request.json()) as CreateSoulIdentityInput;
+        /* A cited tick is never re-recorded as the presser's: it stays its ticker's, and the link below carries it. Only
+           the presser's own `consent: true` records a tick on the identity, as theirs. */
         const identity = await createSoulIdentity(body, claim);
-        await linkConsentIdentity(consentId, identity.id);
+        /* A lost link never fails a training that has started: the tick and the run both stand. */
+        if (tick) await linkConsentIdentity(tick.id, identity.id).catch(() => undefined);
         return Response.json({ identity }, { status: 202, headers });
       } catch (error) {
         if (
           error instanceof SoulIdentityError ||
-          error instanceof SpendReservationError ||
-          error instanceof ConsentError
+          error instanceof SpendReservationError
         )
           return Response.json(
             { error: error.message },

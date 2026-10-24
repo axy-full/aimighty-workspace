@@ -29,7 +29,8 @@ export function HooksTool({ scope, editor, onOpen }: { scope: string; editor: Ow
   const saved = Boolean(p.productionProjectId);
   const agent = useOwnAgent(scope, p.id, saved);
   const models = agent.data?.models.filter((m) => SUITE_MODEL.test(m.id)) ?? [];
-  const configured = Boolean(agent.data?.configured) && models.length > 0;
+  /* The server sends no thinking models (never disclosed): whether one is served is `configured`. */
+  const configured = Boolean(agent.data?.configured);
   const runs = (agent.data?.jobs ?? []).filter((job) => job.suite === "moleculr" || job.plan?.suiteAgent?.suite === "moleculr").slice(0, 4);
   const asked = request ?? hooksRequest(brief);
   const setHooks = (next: string[]) => changeBrief(editor, (b) => ({ ...b, hooks: next.slice(0, OWN_LIMITS.hooks).map((h) => h.slice(0, OWN_LIMITS.hookChars)) }));

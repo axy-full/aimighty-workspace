@@ -1,0 +1,38 @@
+# Particl Prototype v31.16 · the Claude Design prompt (zip form, 22 Oct 2026, revised)
+
+How to use it: same window as v31.15; nothing to attach; `caffeinate -dimsu -t 10800`; paste everything between the lines as ONE message; send the zip to the advisor chat.
+
+────────────────────────────── copy from here ──────────────────────────────
+
+You are making Particl Prototype v31.16, a revision of v31.15, the build in this window. Start from it and keep everything not named here exactly as it is. Read everything below before you change anything. Where this brief and v31.15 disagree, this brief wins.
+
+THE DIRECTOR NEVER STARTS FROM A BLANK PROMPT
+1. Every node in Director mode is born filled from the record. A new shot on Shots carries its line from the script, its cast and place as Inputs, the Look's light, and the Storyboard frame as its start frame; a new element on Elements carries its line from the script and its kind's settings; a new frame on Storyboard carries its scene row (side of the line, time, light) and its cast. Nothing a person decided earlier is typed again.
+2. The Inspector's Settings tab gains a row at its top, **Prompt**, full width, that shows the prompt as it will be sent, assembled from the node's line, its Inputs and the pickers' lines (angle, size, move, light, lens, grain), in plain text, editable in place; a change to any picker rewrites the matching line and leaves the Director's own words alone. The row reads "Prompt · as it will be sent" with its length in words at the right; under it two chips whose prices are live, computed from what each will read and never fixed: **✦ Enhance · N cr** (polishes the line as written, reading only the line and the Setup; samples: 1 cr for a short line, 2 cr for a long line in a heavy script) and **Compose · up to N cr** (Atomik writes the prompt in full from the record; it reads the digests and the step's rows, so its figure rises with the record's size and with the production's Thinking; samples: up to 3 cr at Medium, up to 5 cr at High; it settles at what it used). The result of either replaces the row's text with Undo. Assembly itself is free and shows no price.
+3. The bar in Director mode is for the change, not the description. Its placeholder reads "Change something · tighter, from below, warmer" and what is typed there is applied to the Prompt row as an edit (shown in the row, lit for a moment). Remove "Describe the node · the whole prompt, as long as you like" everywhere.
+4. Every take's card gains **Again with…** in its hover strip and its menu: it duplicates the take with every setting and the Prompt row intact, opens the Inspector on the new take with the Prompt row focused, and the Director changes one thing; Generate · N cr runs it. Free until Generate.
+5. Wires are drawn, never required. A wire shows where a take's face, place, look and start frame came from (thin, from the source card's dot to the take's Inputs row, visible on hover or when the take is selected); no screen ever asks a person to draw one. The Inputs rows are the wiring. Remove any affordance that invites drawing a wire by hand; dragging a card onto a take's Inputs row still adds it as an input.
+6. The Take tab (v31.12) shows the Prompt as sent for every take, read-only, under its settings.
+Show Shot 4 in Director mode with the Prompt row open and filled (&prompt=1), the same after Compose with Undo showing (&prompt=composed), and a take made by Again with… beside its source (&again=s4).
+
+THINKING, IN AGENT MODE
+1. A setting called **Thinking** with three values, High · Medium · Low, Medium the default. It is set once per production at the Brief: a row in the read-back "How I'll make it" that reads "Thinking · Medium · Change"; Change opens three pill rows with one line each — High: "Asks the most, plans the deepest"; Medium: "The balance"; Low: "Quick, for simple films" — and a sample price line under each ("Plans and writing quote higher at High"). The Preflight before every quote shows "Thinking · Medium" as one of its lines. On Make, Thinking is a chip in the folded Settings row.
+2. Settings › Workspace gains a row "Thinking · default for new productions · Medium", with the same three pills, marked "admins only".
+3. No model's name, version, vendor or effort appears anywhere for this setting: not in the pills, the lines, History, receipts, exports, "How Particl works" or Settings. The three words are the whole vocabulary. A band price is the only thing that changes with it.
+4. In Director mode the setting is not shown; the Director's Compose chip quotes at the production's Thinking without naming it.
+Show the Brief read-back with the Thinking row and its picker open (&thinking=1) and the Workspace settings row (&view=settings&section=workspace).
+
+FIXES FOUND IN v31.15
+1. A new node still lands in the wrong place. On Elements a double-click at the top of the canvas puts the card at the far right edge, half outside the canvas under the rail (Director), or at the bottom right under the bar with CAST's count rising to 3 (Agent). The card's top-left goes exactly at the pointer, kept wholly inside the visible canvas; it joins a group only when the pointer is inside that group's box; on empty canvas it stands alone and no group's count changes. &new=director places its card at the canvas centre.
+2. Two cards named "Shot 7 · The watch" on Shots (Scene 3 with its take; Scene 4 "To make · 48 cr", before "Shot 8 · Blue room"). Shot numbers are unique: the Scene 4 card is Shot 8 and the blue room Shot 9, on the canvas, in the rail's count and in the record.
+3. The top-left pill grows about half again once "How Particl works" is scrolled. It is one size everywhere, scrolled or not.
+4. On the phone's Make the line under "What are we making?" runs off the right edge; it wraps or truncates inside the 16 px gutters.
+5. On every page the console reports `<path> attribute d: Expected moveto path command, "{{ p.d }}"` and the same for `{{ bl.d }}`: two paths render their template text before their data arrives. Bind the attribute only once the value exists; the console is clean on load.
+
+URLS
+As v31.15, with: &prompt=1 · &prompt=composed · &again=s4 · &thinking=1 · &view=settings&section=workspace. One file per opening screen; README.txt with the full schema; CHANGES.txt numbered from 1.
+
+CHECKS BEFORE YOU HAND OVER
+Every Director node opens filled from the record; the Prompt row shows the assembled text with Enhance · N cr and Compose · up to N cr, both live; the bar's placeholder is "Change something · tighter, from below, warmer" and "Describe the node" is gone; Again with… duplicates a take with its settings; wires show on hover and selection and nothing asks for one to be drawn; the Take tab shows the prompt as sent. Thinking is High · Medium · Low at the Brief, on the Preflight, in Make's Settings and in Workspace settings, with no model, vendor or effort named anywhere. A double-click makes a card at the pointer, wholly visible, in the group under the pointer or none; shot numbers are unique; the pill is one size on the How page; nothing runs past the phone's edge; the console is clean on load. Every button that spends shows a price; "free" is lowercase and never near Import or Upload; no engine or vendor name in Agent mode; none of these anywhere: Atomik produces, directed by Atomik, AI-powered, made with AI, token, markup, margin, seed, model, template. Open every URL at 1280×800, 1440×900, 1728×1117, 1920×1080, 2560×1440, 3008×1692 at 2× and 3840×2160 at 1×, plus 390×844 and 1024×768; nothing cut off, nothing scrolls sideways; say so only if it is true.
+
+────────────────────────────── to here ──────────────────────────────

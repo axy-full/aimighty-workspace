@@ -1,4 +1,5 @@
 import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
+import { MEDIUM } from "../helpers/thinkingSlots";
 import { test, expect } from '@playwright/test';
 import { createClient } from '@libsql/client';
 import { mkdtempSync } from 'node:fs';
@@ -32,7 +33,8 @@ for (const condition of ['queued-phase', 'started-phase', 'uncertain-phase', 'pa
     const ws = (await getWorkspace(workspaceId))!;
     const native = createPlatformDatabaseClient({ url: ws.dbUrl });
     const fixturePlatform = createClient({ url: process.env.PLATFORM_DATABASE_URL! });
-    const model: CatalogModel = { id: 'anthropic/claude-sonnet-4.6', name: 'Claude fixture', owner: 'anthropic', type: 'language', description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: .0000001, output: .0000003 } };
+    /* The Medium slot's own model (tests/helpers/thinkingSlots), at a made-up rate. */
+    const model: CatalogModel = { id: MEDIUM, name: 'Claude fixture', owner: 'anthropic', type: 'language', description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: .0000001, output: .0000003 } };
     let jobId = '';
     await runInTenant(ws, async () => {
       await ready(); await fundFixtureWorkspace();

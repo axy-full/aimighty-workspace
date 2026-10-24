@@ -11,8 +11,8 @@ export async function signInWithNewInterface(api: APIRequestContext, name = "Wor
 }
 
 /**
- * A signed-in local session whose fresh workspace sees the interface being built from design/particl-prototype-15
- * (lib/newInterface.ts): the workspace is added to the site setting `newInterfaceWorkspaces` in the local platform
+ * A signed-in local session whose fresh workspace sees the interface being built from the design (design/particl-v31.16
+ * since 23 Oct 2026; prototype 15 before it) behind the switch (lib/newInterface.ts): the workspace is added to the site setting `newInterfaceWorkspaces` in the local platform
  * database, as the platform owner would from /admin. Local servers only (signInLocally checks).
  */
 export async function signInToRedesign(api: APIRequestContext, name = "Redesign Tester") {

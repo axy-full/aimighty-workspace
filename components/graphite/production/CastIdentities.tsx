@@ -14,11 +14,15 @@ const ENDPOINT = "/api/soul/identities";
 const STATUS: Record<SoulIdentity["status"], string> = { submitting: "Sending", training: "Training", ready: "Ready", failed: "Failed", uncertain: "Needs review" };
 type Reference = { uploadId: string } | { genId: string };
 
-/** A version's fixed training price, as the workspace pays it; null when it has none (then it is not offered). */
+/**
+ * A version's training price, as the workspace pays it; null when it has none (then it is not offered). It is the
+ * server's fixed price, the exact figure the press sends as its approval (`maxCredits`, or `maxUsd` on the
+ * workspace's own keys), so it reads "N cr" (rule 14), never "about".
+ */
 export function trainingPrice(version: SoulTrainingVersion | null | undefined): string | null {
   if (!version) return null;
-  if (typeof version.trainingCredits === "number") return `about ${version.trainingCredits.toLocaleString("en-US")} cr`;
-  if (typeof version.trainingCostUsd === "number") return `about $${version.trainingCostUsd.toFixed(2)}`;
+  if (typeof version.trainingCredits === "number") return `${version.trainingCredits.toLocaleString("en-US")} cr`;
+  if (typeof version.trainingCostUsd === "number") return `$${version.trainingCostUsd.toFixed(2)}`;
   return null;
 }
 
@@ -35,18 +39,26 @@ function familyOf(identity: SoulIdentity): string {
  * Studio › Cast › Build identity, on the platform's key: name it, choose what
  * it renders with (Standard, 2 or Cinema — only versions with a
  * training price are offered), pick 1–40 stills of the same person from this
- * project, confirm the rights, and it trains in this workspace at its fixed
- * price, shown on the button before anything is sent. Only this workspace's
+ * project, and it trains in this workspace at its fixed price, shown on the
+ * button before anything is sent. The consent tick is recorded with it when
+ * there is one, and never waited for (owner, 23 Oct 2026: a tick, not a gate). Only this workspace's
  * own identities are listed (never the provider site's characters); earlier ones
  * stay listed, read-only. A lost reply is recovered by its saved request, never
  * sent twice.
  */
-export function CastIdentities({ scope, projectId, items, save, consent = null, defaultName = "", onTrained }: {
+export function CastIdentities({ scope, projectId, items, save, consent = null, subjectKey = null, defaultName = "", onTrained, onStarted }: {
   scope: string; projectId: string; items: LibraryEntry[]; save: () => Promise<boolean>;
-  /** A recorded consent (the board's Cast card, Gaps A): it stands in for the rights box and is cited by the request. */
+  /** The live consent tick (the board's Cast card, Gaps A), when there is one: cited by the request, never required. */
   consent?: { id: string; line: string; subjectKey: string } | null;
+  /** The cast member this identity is for (the Cast card's id). */
+  subjectKey?: string | null;
   defaultName?: string;
   onTrained?: () => void;
+  /**
+   * A training the server took (202), or recovered: the board binds it to the cast card so the card follows it.
+   * `pressedIn` is the production the press was made in, captured at the press (the open one may differ by the reply).
+   */
+  onStarted?: (identity: SoulIdentity, pressedIn: string) => void;
 }) {
   const { toast } = useWorkspace();
   const { state, refresh } = useIdentities(scope, projectId);
@@ -74,11 +86,11 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
     : !version || !price ? "No identity version has a training price yet."
     : !name.trim() ? "Name the identity."
     : picked.length < min || picked.length > max ? `Pick ${min}–${max} stills of the same person (${picked.length} picked).`
-    /* Every training cites a person's consent record (review of #558, M1): the tick-box alone no longer trains. */
-    : !consent ? "Record the person's consent on the board's Cast card first; training needs it."
     : null;
 
   const train = async () => {
+    /* The production this press is made in, captured now: the reply can take minutes, and another may be open by then. */
+    const pressedIn = projectId;
     if (busy) return;
     setBusy(true); setOutcome(null);
     try {
@@ -93,11 +105,15 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
           const e = stills.find((s) => s.take.id === id);
           return !e ? [] : [e.asset.origin === "upload" ? { uploadId: e.take.sourceId } : { genId: e.take.sourceId }];
         });
-        body = { projectId, name: name.trim(), description: "", subjectType: "character", references, consent: true, ...(consent ? { consentId: consent.id, subjectKey: consent.subjectKey } : {}), modelVersion: version.version,
+        /* A live tick is cited by its id and stays its ticker's: the press never sends `consent: true` for a tick someone
+           else may have made. With none the training proceeds unticked. */
+        body = { projectId, name: name.trim(), description: "", subjectType: "character", references,
+          ...(consent ? { consentId: consent.id, subjectKey: consent.subjectKey } : subjectKey ? { subjectKey } : {}), modelVersion: version.version,
           ...(typeof version.trainingCredits === "number" ? { maxCredits: version.trainingCredits } : { maxUsd: version.trainingCostUsd }) };
       }
       const { data: reply } = await paid.run<{ identity: SoulIdentity }>(ENDPOINT, body);
       const identity = reply.identity;
+      onStarted?.(identity, pressedIn);
       if (identity.status === "failed" || identity.status === "uncertain") setOutcome({ error: true, text: identity.error || "Training needs review. Its status is listed below." });
       else {
         setOutcome({ error: false, text: `${identity.name} is training for ${familyOf(identity)}. It is listed below; characters can render with it once it is ready.` });
@@ -166,14 +182,14 @@ export function CastIdentities({ scope, projectId, items, save, consent = null, 
           </div>
           {consent ? (
             <div className="gx-gen-row" data-testid="soul-consent-record">
-              <span className="gx-eyebrow" data-functional-label="">Consent on file</span>
+              <span className="gx-eyebrow" data-functional-label="">Consent ticked</span>
               <p className="gx-hint">{consent.line}</p>
             </div>
           ) : null}
           <p className="gx-hint" data-testid="soul-terms">Charged once the trainer accepts it, even if training then fails.</p>
           <div className="gx-gen-enhance">
             <button type="button" className="gx-primary pd-go" disabled={Boolean(blocked) || busy} aria-describedby={blocked ? "soul-blocked" : undefined} onClick={() => void train()} data-testid="soul-build">
-              {busy ? "Sending…" : price && version ? `${consent ? "Train Identity" : "Build identity"} · ${price}` : consent ? "Train Identity" : "Build identity"}
+              {busy ? "Sending…" : price && version ? `Train Identity · ${price}` : "Train Identity"}
             </button>
             {blocked ? <span className="gx-reason" id="soul-blocked" data-testid="soul-blocked">{blocked}</span> : null}
           </div>
