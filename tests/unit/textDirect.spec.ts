@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { MEDIUM } from '../helpers/thinkingSlots';
+import { vendorRatesIn } from '../helpers/vendorFigures';
 import { APICallError, generateText, type LanguageModelUsage } from 'ai';
 import { gatewayPost, explainGatewayFailure, GATEWAY_URL } from '../../lib/gateway';
 import { languageAuth, languageModel } from '../../lib/language-provider';
@@ -122,8 +123,9 @@ test('Anthropic: request and reply fixture through the SDK, cache tokens in usag
     usage: { prompt_tokens: 200, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 60, cache_write_tokens: 40 } } });
   expect(json.usage).not.toHaveProperty('cost'); expect(json).not.toHaveProperty('cost');
   // What PR 3 will bill: uncached input, cache reads and cache writes each at their own price.
-  const priced = { id: model, owner: 'anthropic', name: 'Sonnet', type: 'language', description: '', contextWindow: 1000000, maxTokens: 128000, pricing: { input: .000003, output: .000015, input_cache_read: .0000003, input_cache_write: .00000375 } } as CatalogModel;
-  expect(directTextCostUsd(priced, json.usage)).toBeCloseTo(100 * .000003 + 60 * .0000003 + 40 * .00000375 + 25 * .000015, 12);
+  const priced = { id: model, owner: 'anthropic', name: 'Writer fixture', type: 'language', description: '', contextWindow: 1000000, maxTokens: 128000, pricing: { input: .00000319, output: .0000163, input_cache_read: .000000353, input_cache_write: .00000409 } } as CatalogModel;
+  expect(vendorRatesIn(priced.pricing), 'made-up rates').toEqual([]);
+  expect(directTextCostUsd(priced, json.usage)).toBeCloseTo(100 * .00000319 + 60 * .000000353 + 40 * .00000409 + 25 * .0000163, 12);
 });
 
 test('Google: request and reply fixture, thought tokens billed as output, cached tokens inside the prompt', async () => {
@@ -321,8 +323,6 @@ test('provider errors are logged and rethrown without the request body, so the p
 test('direct text is billed (PR 3): the rig planner prices a direct turn from raw usage, and the inline writer sends and prices its call', async () => {
   process.env.TEXT_DIRECT = 'anthropic';
   process.env.MODEL_CATALOG = 'static';
-  // Claude Sonnet 5 at the snapshot, for anthropicReply's usage: 100 uncached, 60 read, 40 written, 25 out.
-  const usd = 100 * 0.000002 + 60 * 0.0000002 + 40 * 0.0000025 + 25 * 0.00001;
 
   // The rig agent prices its planning turn on the direct door and reads the provider's raw counts.
   const { plannerPrice } = await import('../../lib/workbench/rig-agent');
@@ -350,6 +350,11 @@ test('direct text is billed (PR 3): the rig planner prices a direct turn from ra
 
   // The inline writer (house workspaces) reads PROMPT_MODELS, still under its old name, and goes through the router.
   process.env.GATEWAY_PROMPT_MODELS = 'anthropic/claude-sonnet-5';
+  // The writer's catalogue entry, for anthropicReply's usage: 100 uncached, 60 read, 40 written, 25 out (its rates read from the entry, not written here).
+  const { snapshotModels } = await import('../../lib/catalog');
+  const writer = snapshotModels().find((m) => m.id === process.env.GATEWAY_PROMPT_MODELS)!.pricing as Record<string, unknown>;
+  for (const key of ['input', 'input_cache_read', 'input_cache_write', 'output']) expect(Number(writer[key]), key).toBeGreaterThan(0);
+  const usd = 100 * Number(writer.input) + 60 * Number(writer.input_cache_read) + 40 * Number(writer.input_cache_write) + 25 * Number(writer.output);
   const sent: string[] = [];
   globalThis.fetch = async (url) => { sent.push(String(url)); return Response.json({ ...anthropicReply('A slow dolly toward the door.\nCAMERA: push') }); };
   const { enhancePrompt } = await import('../../lib/enhance');

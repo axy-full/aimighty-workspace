@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { AUDIO_ENGINE, MARKETING_STILL_ENGINE, STILL_ENGINE, VIDEO_ENGINE } from "../helpers/runtimeIds";
 import { MEDIUM } from "../helpers/thinkingSlots";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -315,13 +316,14 @@ async function inWorkspace<T>(name: string, fn: (seed: Seed) => Promise<T>): Pro
 
 /** Network is closed except for a canned gateway catalogue holding one Atomik planner: the Medium slot's own model (tests/helpers/thinkingSlots),
     at a made-up rate. */
+const PLANNER_PRICING = { input: "0.00000449", output: "0.0000173" };
 async function withCatalogue<T>(fn: () => Promise<T>): Promise<T> {
   const real = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input instanceof Request ? input.url : input);
     if (url.endsWith("/models") && url.includes("ai-gateway.vercel.sh"))
       return new Response(JSON.stringify({ data: [{ id: MEDIUM, name: "Planner", type: "language", context_window: 200000, max_tokens: 8000,
-        pricing: { input: "0.000003", output: "0.000015" }, modalities: { input: ["text", "image"], output: ["text"] } }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+        pricing: PLANNER_PRICING, modalities: { input: ["text", "image"], output: ["text"] } }] }), { status: 200, headers: { "Content-Type": "application/json" } });
     throw new Error(`Network is forbidden in the library steps test: ${url}`);
   }) as typeof fetch;
   try {
@@ -642,3 +644,7 @@ test("a library step keeps its engine and inputs; its price comes only from its 
     await setSetting("atomikEngines", JSON.stringify([SWAP]), actor.user.id);
     expect((await atomik.keyStepEngines()).map((e) => e.id)).toEqual([MOTION, MARKETING]);
   }));
+
+test("no fixture in this file states a vendor's rate", () => {
+  expect(vendorRatesIn(PLANNER_PRICING)).toEqual([]);
+});

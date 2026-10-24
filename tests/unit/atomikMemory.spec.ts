@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { MEDIUM } from "../helpers/thinkingSlots";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -400,7 +401,8 @@ test("the Suites agent's plan carries the kept memory in the request it prices a
   const { seedProject } = await import("../../lib/workbench/studio");
   const server = await import("../../lib/workbench/atomik-server");
   /* The Medium slot's own model (tests/helpers/thinkingSlots), at a made-up rate. */
-  const model: CatalogModel = { id: MEDIUM, name: "Economy", owner: "test", type: "language", inputModalities: ["text", "image"], description: "", contextWindow: 200000, maxTokens: 8192, pricing: { input: "0.0000001", output: "0.0000003" } };
+  const model: CatalogModel = { id: MEDIUM, name: "Economy", owner: "test", type: "language", inputModalities: ["text", "image"], description: "", contextWindow: 200000, maxTokens: 8192, pricing: { input: "0.000000113", output: "0.000000379" } };
+  expect(vendorRatesIn(model.pricing)).toEqual([]);
   const deps: Partial<AtomikDependencies> = {
     models: async () => [model], allowance: async () => ({ ok: true }),
     limits: async () => ({ allow: true, limits: { concurrency: 3, rendersPerHour: 30, storageBytes: 1_000_000 }, standing: { running: 0, startedLastHour: 0, usedBytes: 0 } }),
