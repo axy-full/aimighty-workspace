@@ -141,9 +141,11 @@ test("the client sees this production's review set and nothing else: no other ta
   expect(Object.keys(body).sort()).toEqual(["expiresAt", "kind", "production", "takes", "workspace"]);
   expect(Object.keys(body.workspace).sort()).toEqual(["logo", "name"]);
   const text = JSON.stringify(body);
-  for (const leak of ["g_unjudged", "g_changes", "g_deleted", "g_failed", "g_other", "Another production", "g_wsb_take", "Workspace B", "SECRET PROMPT", "internal notes", "Owner Person", "Member Person", "@example.invalid", "1234", "credits", "balance", "ws_linka", "owner"]) {
+  for (const leak of ["g_unjudged", "g_changes", "g_deleted", "g_failed", "g_other", "Another production", "g_wsb_take", "Workspace B", "SECRET PROMPT", "internal notes", "Owner Person", "Member Person", "@example.invalid", "credits", "balance", "ws_linka", "owner"]) {
     expect(text, leak).not.toContain(leak);
   }
+  /* The seeded balance (1234 cr) as a whole number anywhere in the body; the digits inside a longer number (expiresAt) are not it. */
+  expect(text, "1234").not.toMatch(/(?<!\d)1234(?!\d)/);
   /* The team's note is signed by the production, never by a person. */
   /* The team's own notes stay inside the workspace (review of #558, L2): the client sees their own words only. */
   expect(body.takes[1].notes).toEqual([]);
