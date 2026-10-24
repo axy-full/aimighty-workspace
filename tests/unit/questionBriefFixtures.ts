@@ -6,7 +6,8 @@ import type { RowSource } from "../../lib/productionModel/questionTypes";
  * SYNTHETIC STAND-INS. D11 asks for "three of the owner's own past briefs, client and product names stripped (rule 3), in the
  * shapes people send (a PDF deck, a WhatsApp paragraph, a voice note)". Those briefs are the owner's material and are not in
  * the repo, so the first three fixtures below are written by the lead in those three shapes, with made-up products and no
- * person, client, brand or workspace name. They are replaced by the owner's own when he supplies them (an owner question).
+ * person, client, brand or workspace name. Each id starts "synthetic-" and each is marked below. The owner, 24 Oct 2026: they
+ * stay synthetic for now and are replaced by his three stripped briefs before the question engine (3d) reaches the house.
  * The last three are test shapes the floor test needs as well: only the + menu's choice, nothing at all, and a workspace whose
  * house defaults (D8) answer two rows.
  *
@@ -29,8 +30,9 @@ export type BriefFixture = {
 const menu = { kind: { value: "ad_film", source: "said" } } as const;
 
 export const BRIEF_FIXTURES: readonly BriefFixture[] = [
+  /* SYNTHETIC: the lead's stand-in for the owner's PDF deck (D11). Not a real brief. */
   {
-    id: "d11-deck",
+    id: "synthetic-d11-deck",
     shape: "deck",
     synthetic: true,
     words:
@@ -49,8 +51,9 @@ export const BRIEF_FIXTURES: readonly BriefFixture[] = [
     },
     expect: { known: ["kind", "length", "plays", "language", "material"], assumed: [], asks: ["real", "ceiling"] },
   },
+  /* SYNTHETIC: the lead's stand-in for the owner's WhatsApp paragraph (D11). Not a real brief. */
   {
-    id: "d11-chat",
+    id: "synthetic-d11-chat",
     shape: "chat",
     synthetic: true,
     words: "hi! need a quick 15 sec ad for phones, english only. no actors, just the product - a jar of lime pickle. something fun",
@@ -65,8 +68,9 @@ export const BRIEF_FIXTURES: readonly BriefFixture[] = [
     },
     expect: { known: ["kind", "length", "plays", "language", "real"], assumed: [], asks: ["material", "ceiling"] },
   },
+  /* SYNTHETIC: the lead's stand-in for the owner's voice note (D11). Not a real brief. */
   {
-    id: "d11-voice-note",
+    id: "synthetic-d11-voice-note",
     shape: "voice_note",
     synthetic: true,
     words:
