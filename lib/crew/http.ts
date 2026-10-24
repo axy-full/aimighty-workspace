@@ -4,7 +4,7 @@ import { readDraft, workbenchReady } from "../workbench/records";
 import { workbenchScopeProblem } from "../workbench/request-scope";
 import type { Project } from "../workbench/studio";
 import { CONTEXT_LABELS, DEFAULT_CONTEXT, GOAL_MAX, type CrewContext } from "./room";
-import { CrewError } from "./store";
+import { CrewError, type CrewMember, type CrewSession } from "./store";
 
 /** What every Crew route needs first: who is asking, in which workspace, from a page that still belongs to them. */
 export const NO_STORE = { "Cache-Control": "no-store" };
@@ -24,6 +24,20 @@ export async function crewProject(userId: string, projectId: unknown): Promise<P
   if (!draft) throw new CrewError("Save your project first.", 404);
   return draft.project;
 }
+
+/** A room as a member is sent it: without the engine's model (Amendment (iii) §E). The row keeps it. */
+export function shownSession<T extends CrewSession>(session: T): Omit<T, "model"> {
+  const { model: _model, ...shown } = session;
+  void _model;
+  return shown;
+}
+/** A seat as a member is sent it: without its effort (Amendment (iii) §E). The row keeps it; the round still runs at it. */
+export function shownMember(member: CrewMember): Omit<CrewMember, "effort"> {
+  const { effort: _effort, ...shown } = member;
+  void _effort;
+  return shown;
+}
+export const shownMembers = (members: readonly CrewMember[]) => members.map(shownMember);
 
 export function crewFailure(error: unknown): Response {
   if (error instanceof CrewError) return Response.json({ error: error.message }, { status: error.status, headers: NO_STORE });

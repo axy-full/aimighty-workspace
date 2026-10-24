@@ -4,7 +4,7 @@ import { useScopedFetch } from "@/lib/useScopedFetch";
 import { useSession } from "@/lib/session";
 import { clearPendingRound, pendingRoundKey, readPendingRound, roundFate, writePendingRound, type PendingRound } from "./pending-round";
 import { DEFAULT_CONTEXT, minutesFile, roundBlock, type CrewContext, type CrewPhase } from "./room";
-import type { CrewMember, CrewSession, CrewSolution, MemberPatch, SessionSummary, StoredMessage } from "./store";
+import type { CrewSolution, MemberPatch, SessionSummary, ShownMember as CrewMember, ShownSession as CrewSession, StoredMessage } from "./store";
 
 /**
  * The room, in the browser. Everything here is read from or written through
@@ -16,7 +16,8 @@ import type { CrewMember, CrewSession, CrewSolution, MemberPatch, SessionSummary
  * sent, so a second press after a lost reply is never a second paid round.
  */
 export type RoomMessage = StoredMessage & { to: string | null };
-export type CrewStatus = { connected: boolean; priced: boolean; model: string };
+/** The crew engine's state as /api/crew/status sends it: no engine, vendor or effort is named (Amendment (iii) §E, Crew included). */
+export type CrewStatus = { connected: boolean; priced: boolean };
 type Quote = { key: string; credits: number | null; usd: number | null; reason: string | null };
 
 const STORE = (projectId: string) => `particl-crew-room-${projectId}`;
@@ -57,7 +58,7 @@ export function useCrew(projectId: string | null) {
   const [session, setSession] = useState<CrewSession | null>(null);
   const [messages, setMessages] = useState<RoomMessage[]>([]);
   const [solutions, setSolutions] = useState<CrewSolution[]>([]);
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessions, setSessions] = useState<Omit<SessionSummary, "model">[]>([]);
   const [goal, setGoal] = useState("");
   const [context, setContext] = useState<CrewContext>(DEFAULT_CONTEXT);
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -66,6 +67,7 @@ export function useCrew(projectId: string | null) {
   const [thinking, setThinking] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [engineMoves, setEngineMoves] = useState(0);
 
   const call = useCallback(async <T,>(url: string, init?: RequestInit): Promise<T> => {
     const response = await scoped(url, { cache: "no-store", ...init, headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) } });
@@ -84,7 +86,7 @@ export function useCrew(projectId: string | null) {
 
   const refreshSessions = useCallback(async () => {
     if (!projectId) return;
-    setSessions((await call<{ sessions: SessionSummary[] }>(`/api/crew/sessions?projectId=${encodeURIComponent(projectId)}`)).sessions);
+    setSessions((await call<{ sessions: Omit<SessionSummary, "model">[] }>(`/api/crew/sessions?projectId=${encodeURIComponent(projectId)}`)).sessions);
   }, [call, projectId]);
 
   /* Load: the key's status, this project's roster, its rooms, and the room left open. */
@@ -94,12 +96,12 @@ export function useCrew(projectId: string | null) {
       try {
         const s = await call<CrewStatus>("/api/crew/status");
         if (live) setStatus(s);
-      } catch { if (live) setStatus({ connected: false, priced: false, model: "" }); }
+      } catch { if (live) setStatus({ connected: false, priced: false }); }
       if (!projectId) { if (live) setLoaded(true); return; }
       try {
         const [roster, rooms] = await Promise.all([
           call<{ members: CrewMember[] }>(`/api/crew/members?projectId=${encodeURIComponent(projectId)}`),
-          call<{ sessions: SessionSummary[] }>(`/api/crew/sessions?projectId=${encodeURIComponent(projectId)}`),
+          call<{ sessions: Omit<SessionSummary, "model">[] }>(`/api/crew/sessions?projectId=${encodeURIComponent(projectId)}`),
         ]);
         if (!live) return;
         setMembers(roster.members); setSessions(rooms.sessions);
@@ -116,7 +118,7 @@ export function useCrew(projectId: string | null) {
   const blockedBy = session?.needsReview ? "This round needs an engine outcome review before another can run." : roundBlock({ goal, seated: active.length, running, roundsRun: session?.roundsRun ?? 0, keyConnected: status?.connected ?? true, hasProject: Boolean(projectId) });
 
   /* The live price: what the next round can cost at most, for exactly this goal, context and roster. */
-  const quoteKey = JSON.stringify([projectId, session?.id ?? null, session?.model ?? null, session?.roundsRun ?? 0, messages.length, goal.trim(), context, active.map((m) => [m.id, m.stance.length, m.name, m.department])]);
+  const quoteKey = JSON.stringify([projectId, session?.id ?? null, engineMoves, session?.roundsRun ?? 0, messages.length, goal.trim(), context, active.map((m) => [m.id, m.stance.length, m.name, m.department])]);
   const quotable = blockedBy === null && Boolean(projectId) && loaded;
   useEffect(() => {
     if (!quotable) return;
@@ -255,6 +257,8 @@ export function useCrew(projectId: string | null) {
     moveToCurrentEngine: () => guard(async () => {
       if (!session) return;
       setSession((await call<{ session: CrewSession }>(`/api/crew/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ model: "current" }) })).session);
+      /* The room's engine is not sent to the page (Amendment (iii) §E): a move re-prices the next round by this count instead. */
+      setEngineMoves((n) => n + 1);
     }),
     addMember: (presetId: string) => guard(async () => { setMembers((await call<{ members: CrewMember[] }>("/api/crew/members", { method: "POST", body: JSON.stringify({ projectId, presetId }) })).members); }),
     patchMember: (id: string, patch: MemberPatch) => guard(async () => { setMembers((await call<{ members: CrewMember[] }>("/api/crew/members", { method: "PATCH", body: JSON.stringify({ id, ...patch }) })).members); }),
@@ -286,7 +290,7 @@ export function useCrew(projectId: string | null) {
       if (!response.ok) throw new Error("The minutes could not be exported.");
       return minutesFile(await response.text(), session.id);
     },
-    verify: async () => call<{ ok: boolean; listed: boolean; model: string; models: string[]; reason?: string }>("/api/crew/status", { method: "POST" }),
+    verify: async () => call<{ ok: boolean; listed: boolean; reason?: string }>("/api/crew/status", { method: "POST" }),
   };
 }
 export type CrewRoom = ReturnType<typeof useCrew>;

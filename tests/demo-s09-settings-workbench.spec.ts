@@ -112,7 +112,7 @@ async function open(page: Page, path: string, opts: { on?: boolean; member?: API
   await page.route("**/api/workspaces/keys", (route) => route.fulfill({ json: { usesPlatformKeys: true, mode: "platform", managed: true, canPlatform: true, credits: null, keys: [
     { name: "byteplus", label: "BytePlus", does: "Seedance video", set: true, masked: null }, { name: "google", label: "Google", does: "Nano Banana stills", set: true, masked: null }, { name: "xai", label: "xAI", does: "Grok", set: true, masked: null }, { name: "elevenlabs", label: "ElevenLabs", does: "Voice", set: false, masked: null },
   ] } }));
-  await page.route("**/api/crew/status", (route) => route.fulfill({ json: { connected: true, priced: true, model: "grok" } }));
+  await page.route("**/api/crew/status", (route) => route.fulfill({ json: { connected: true, priced: true } }));
   await page.route("**/api/higgsfield/consumer/connection", (route) => route.fulfill({ json: { connected: false, requiresReconnect: false, capacity: null } }));
   const rules = [{ id: "r1", text: "Keep shots under ten seconds", scope: "all", apply: "prompt", on: true, source: "workspace" }, { id: "p1", text: "No logos in frame", scope: "all", apply: "prompt", on: true, source: "platform" }];
   await page.route(/\/api\/rules(\/[a-z0-9]+)?$/, async (route) => {

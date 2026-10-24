@@ -25,6 +25,12 @@ export type CrewSession = {
   running?: boolean;
   needsReview?: boolean;
 };
+/**
+ * A room and a seat as a member is sent them (lib/crew/http.ts shownSession, shownMember): never the engine's model and never a seat's
+ * effort (Amendment (iii) §E, Crew included; owner, 24 Oct 2026). The rows keep both, for pricing, the round and the platform.
+ */
+export type ShownSession = Omit<CrewSession, "model">;
+export type ShownMember = Omit<CrewMember, "effort">;
 export type CrewMessage = {
   id: string; sessionId: string; round: number; phase: CrewPhase | "note"; memberId: string | null; toMemberId: string | null;
   text: string; tokensIn: number; tokensOut: number; createdAt: number;

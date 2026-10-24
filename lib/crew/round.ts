@@ -47,7 +47,8 @@ export async function roomRate(model: string, read: (model: string) => Promise<R
   const rate = await read(model);
   if (rate) return rate;
   const current = xaiModel();
-  if (model && model !== current) throw new CrewError(`This room runs on ${model}, which can no longer be priced. Move it to ${current} to run.`, 409);
+  /* Said without either engine's name (Amendment (iii) §E, Crew included). */
+  if (model && model !== current) throw new CrewError("This room’s engine can no longer be priced. Move the room to the current engine to run.", 409);
   throw new CrewError("This engine cannot be priced right now, so the room will not run.", 503);
 }
 

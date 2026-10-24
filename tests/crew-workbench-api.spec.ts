@@ -34,11 +34,14 @@ test("a room quotes first, streams propose → challenge → converge, settles o
 
     const status = await request.get("/api/crew/status", { headers }).then((r) => r.json());
     expect(status).toMatchObject({ connected: true, priced: true });
+    /* No engine, vendor or effort is sent to a member (Amendment (iii) §E, Crew included; owner, 24 Oct 2026). */
+    expect(status).not.toHaveProperty("model");
 
     /* The first read seats the default five, the Producer in the chair. */
     const roster = (await request.get(`/api/crew/members?projectId=${project.id}`, { headers }).then((r) => r.json())).members as { id: string; name: string; isChair: boolean; active: boolean }[];
     expect(roster.map((m) => m.name)).toEqual(["Director", "DOP", "Production designer", "Editor", "Producer"]);
     expect(roster.filter((m) => m.isChair).map((m) => m.name)).toEqual(["Producer"]);
+    for (const m of roster) expect(m, m.name).not.toHaveProperty("effort");
     const dup = await request.post("/api/crew/members", { headers, data: { projectId: project.id, presetId: "dop" } });
     expect(dup.status()).toBe(409);
     /* Mute the editor: four speak. */
@@ -48,12 +51,14 @@ test("a room quotes first, streams propose → challenge → converge, settles o
     expect((await request.post("/api/crew/sessions", { headers, data: { projectId: project.id, goal: "  " } })).status()).toBe(400);
     const created = await request.post("/api/crew/sessions", { headers, data: { projectId: project.id, goal: "Open the film without dialogue and still make the product unmistakable inside the first four seconds.", context: { brief: true, script: true, boards: false, cast: false, rig: false } } });
     expect(created.ok(), await created.text()).toBe(true);
-    const session = (await created.json()).session as { id: string; model: string };
+    const session = (await created.json()).session as { id: string };
+    expect(session).not.toHaveProperty("model");
     const rounds = `/api/crew/sessions/${session.id}/rounds`;
 
     /* The quote is read-only: 4 members → 9 requests, a whole-credit ceiling, no dollars for a credit workspace. */
     const quote = await request.post(rounds, { headers, data: { quoteOnly: true } }).then((r) => r.json());
-    expect(quote).toMatchObject({ members: 4, calls: 9, model: session.model });
+    expect(quote).toMatchObject({ members: 4, calls: 9 });
+    expect(quote).not.toHaveProperty("model");
     expect(quote.estimateCredits).toBeGreaterThanOrEqual(1);
     expect(quote.estimateUsd).toBeUndefined();
     expect(await events()).toHaveLength(0);
@@ -90,10 +95,11 @@ test("a room quotes first, streams propose → challenge → converge, settles o
     expect(Number(done.spendCr)).toBeGreaterThanOrEqual(1);
     expect(Number(done.spendCr)).toBeLessThanOrEqual(quote.estimateCredits);
 
-    /* One round is one settled event, on the xai engine, within the ceiling. */
+    /* One round is one settled event, on the xai engine, within the ceiling. The meter keeps the room's model (the platform's record). */
     const settled = await events();
     expect(settled).toHaveLength(1);
-    expect(settled[0]).toMatchObject({ status: "succeeded", engine: "xai", model: session.model });
+    expect(settled[0]).toMatchObject({ status: "succeeded", engine: "xai" });
+    expect(String(settled[0].model ?? "")).not.toBe("");
     expect(Number(settled[0].credits)).toBe(Number(done.spendCr));
     /* The round number is the request's key: round 1 sent again (a second press, or the request arriving late) runs nothing. */
     const again = await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits + 50, round: 1 } });

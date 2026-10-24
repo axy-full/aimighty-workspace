@@ -18,7 +18,7 @@ export const GET = withTenant(async (req: Request, { params }: Ctx) => {
     ]);
     const names = new Map(messages.filter((m) => m.memberId).map((m) => [m.memberId!, m.name]));
     const markdown = minutesMarkdown({
-      project: project.name, goal: session.goal, model: session.model, createdAt: session.createdAt, roundsRun: session.roundsRun, spendCr: session.spendCr,
+      project: project.name, goal: session.goal, createdAt: session.createdAt, roundsRun: session.roundsRun, spendCr: session.spendCr,
       roster: members, messages: messages.map((m) => ({ round: m.round, phase: m.phase, name: m.name, to: m.toMemberId ? names.get(m.toMemberId) ?? null : null, text: m.text })),
       solutions,
     });

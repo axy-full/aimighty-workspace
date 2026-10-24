@@ -73,8 +73,8 @@ test("the matchers: the retired lines and the thinking models are caught, the Di
  * and the number of times it is found there, so a new one in the same file still fails.
  */
 const UNTIL_MODEL_POLICY: readonly { path: string; text: string; count: number }[] = [
-  /* The crew's per-member agent and its effort setting: the owner's call in the model-policy PR (Crew runs on xAI; E says xAI leaves Atomik). */
-  { path: "app/api/crew/members/route.ts", text: "Choose low, medium or high effort.", count: 1 },
+  /* None left. The crew's effort line went with the owner's answer (24 Oct 2026, item 14 (a): §E covers Crew; no model, vendor or effort
+     name in any rendered string), so a new line naming one fails anywhere. */
 ];
 
 const files = () => scannedFiles(repoFiles());

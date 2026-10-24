@@ -126,18 +126,23 @@ test("a room's rounds go to the model it was priced for, not whatever XAI_MODEL 
   }
 });
 
-test("a room whose engine can no longer be priced says so, and names the engine to move it to", async () => {
+test("a room whose engine can no longer be priced says so, and says to move it, naming neither engine (Amendment (iii) §E)", async () => {
   const { roomRate } = await import("../../lib/crew/round");
   const saved = process.env.XAI_MODEL;
-  process.env.XAI_MODEL = "grok-newer";
+  /* Stand-in engine names: roomRate prices whatever it is handed; what matters is that neither name reaches the words. */
+  const ROOM = "room-engine-a", CURRENT = "current-engine-b";
+  process.env.XAI_MODEL = CURRENT;
   try {
     const rate = { inputUsdPerToken: 1 / 1e6, outputUsdPerToken: 2 / 1e6 };
     // Still priced: the room keeps its own engine and its own rate.
-    expect(await roomRate("grok-4.6", async (model) => (model === "grok-4.6" ? rate : null))).toBe(rate);
-    // The deployment moved on and the room's engine has no price: the room says where to move, never switches by itself.
-    await expect(roomRate("grok-4.6", async () => null)).rejects.toMatchObject({ status: 409, message: "This room runs on grok-4.6, which can no longer be priced. Move it to grok-newer to run." });
+    expect(await roomRate(ROOM, async (model) => (model === ROOM ? rate : null))).toBe(rate);
+    // The deployment moved on and the room's engine has no price: the room says to move, never switches by itself, and names no engine.
+    const moved = await roomRate(ROOM, async () => null).then(() => null, (error: unknown) => error as { status: number; message: string });
+    expect(moved).toMatchObject({ status: 409, message: "This room’s engine can no longer be priced. Move the room to the current engine to run." });
+    expect(moved!.message).not.toContain(ROOM);
+    expect(moved!.message).not.toContain(CURRENT);
     // The current engine itself unpriced is the old refusal.
-    await expect(roomRate("grok-newer", async () => null)).rejects.toMatchObject({ status: 503, message: "This engine cannot be priced right now, so the room will not run." });
+    await expect(roomRate(CURRENT, async () => null)).rejects.toMatchObject({ status: 503, message: "This engine cannot be priced right now, so the room will not run." });
   } finally {
     if (saved === undefined) delete process.env.XAI_MODEL; else process.env.XAI_MODEL = saved;
   }

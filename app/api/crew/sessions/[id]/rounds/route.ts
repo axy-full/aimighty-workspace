@@ -58,7 +58,7 @@ export const POST = withTenant(async (req: Request, { params }: Ctx) => {
     const credits = creditsApply(currentTenant()?.workspace);
 
     if (body.quoteOnly === true)
-      return Response.json({ model: quote.model, calls: quote.calls, members: active.length, estimateCredits: quote.estimateCredits, ...(credits ? {} : { estimateUsd: quote.ceilingUsd }) }, { headers: NO_STORE });
+      return Response.json({ calls: quote.calls, members: active.length, estimateCredits: quote.estimateCredits, ...(credits ? {} : { estimateUsd: quote.ceilingUsd }) }, { headers: NO_STORE });
 
     if (typeof body.maxCredits !== "number" || !Number.isInteger(body.maxCredits) || body.maxCredits < 0) throw new CrewError("Review the round's price before running it.", 409);
     if (typeof body.round !== "number" || !Number.isInteger(body.round) || body.round < 1) throw new CrewError("Reload the room before running a round.", 409);

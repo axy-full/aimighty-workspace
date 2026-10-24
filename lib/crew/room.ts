@@ -137,14 +137,14 @@ export function callCostUsd(usage: { promptTokens: number; completionTokens: num
   return usage.promptTokens * rate.inputUsdPerToken + usage.completionTokens * rate.outputUsdPerToken;
 }
 
-/** Markdown minutes: goal, roster, transcript, solutions. */
+/** Markdown minutes: goal, roster, transcript, solutions. No engine is named (Amendment (iii) §E, Crew included). */
 export function minutesMarkdown(input: {
-  project: string; goal: string; model: string; createdAt: number; roundsRun: number; spendCr: number | null;
+  project: string; goal: string; createdAt: number; roundsRun: number; spendCr: number | null;
   roster: { name: string; department: string; isChair: boolean; active: boolean }[];
   messages: { round: number; phase: CrewPhase | "note"; name: string; to?: string | null; text: string }[];
   solutions: { round: number; text: string; source: "converge" | "pin"; status: string }[];
 }): string {
-  const out = [`# Crew minutes — ${input.project}`, "", `**Goal.** ${input.goal}`, "", `${new Date(input.createdAt).toISOString().slice(0, 10)} · ${input.model} · ${input.roundsRun} ${input.roundsRun === 1 ? "round" : "rounds"}${input.spendCr == null ? "" : ` · ${input.spendCr} cr`}`, "", "## In the room", ""];
+  const out = [`# Crew minutes — ${input.project}`, "", `**Goal.** ${input.goal}`, "", `${new Date(input.createdAt).toISOString().slice(0, 10)} · ${input.roundsRun} ${input.roundsRun === 1 ? "round" : "rounds"}${input.spendCr == null ? "" : ` · ${input.spendCr} cr`}`, "", "## In the room", ""];
   for (const m of input.roster) out.push(`- ${m.name} — ${m.department}${m.isChair ? " (chair)" : ""}${m.active ? "" : " (muted)"}`);
   out.push("", "## Transcript");
   let head = "";

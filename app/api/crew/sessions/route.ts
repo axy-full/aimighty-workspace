@@ -1,5 +1,5 @@
 import { withTenant } from "@/lib/auth";
-import { NO_STORE, cleanContext, cleanGoal, crewCaller, crewFailure, crewProject } from "@/lib/crew/http";
+import { NO_STORE, cleanContext, cleanGoal, crewCaller, crewFailure, crewProject, shownSession } from "@/lib/crew/http";
 import { creditsApply } from "@/lib/credits";
 import { quoteRound, roomRate } from "@/lib/crew/round";
 import { CrewError, createSession, listMembers, listMessages, listSessions, readSession } from "@/lib/crew/store";
@@ -15,7 +15,7 @@ export const GET = withTenant(async (req: Request) => {
   if (caller.response) return caller.response;
   try {
     const project = await crewProject(caller.userId, new URL(req.url).searchParams.get("projectId"));
-    return Response.json({ sessions: await listSessions(caller.userId, project.id) }, { headers: NO_STORE });
+    return Response.json({ sessions: (await listSessions(caller.userId, project.id)).map(shownSession) }, { headers: NO_STORE });
   } catch (error) { return crewFailure(error); }
 });
 
@@ -47,9 +47,9 @@ export const POST = withTenant(async (req: Request) => {
       const transcriptChars = existing ? (await listMessages(existing.id)).reduce((n, m) => n + m.text.length + m.name.length + 8, 0) : 0;
       const session = { id: "", projectId: project.id, goal, context, model, roundsRun: existing?.roundsRun ?? 0, spendCr: null, spendUsd: 0, createdBy: caller.userId, createdAt: 0 };
       const quote = quoteRound({ session, project, active, transcriptChars, rate });
-      return Response.json({ model: quote.model, calls: quote.calls, members: active.length, estimateCredits: quote.estimateCredits, ...(creditsApply(currentTenant()?.workspace) ? {} : { estimateUsd: quote.ceilingUsd }) }, { headers: NO_STORE });
+      return Response.json({ calls: quote.calls, members: active.length, estimateCredits: quote.estimateCredits, ...(creditsApply(currentTenant()?.workspace) ? {} : { estimateUsd: quote.ceilingUsd }) }, { headers: NO_STORE });
     }
     const session = await createSession(caller.userId, { projectId: project.id, goal, context, model: xaiModel() });
-    return Response.json({ session }, { headers: NO_STORE });
+    return Response.json({ session: shownSession(session) }, { headers: NO_STORE });
   } catch (error) { return crewFailure(error); }
 });

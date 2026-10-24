@@ -52,7 +52,7 @@ async function open(page: Page, path: string) {
   });
   await page.route("**/api/usage", (route) => route.fulfill({ json: { unit: "credits", pending: 0, spentCredits: 312, promptSpendCredits: 0, credits: { granted: 1612, used: 312, balance: 1300 }, vendors: [{ id: "byteplus", label: "BytePlus" }], totalGenerations: 15, succeeded: 15, failed: 0, promptCount: 0, storage: null, timing: [], refines: [], byModel: [{ model: "seedance-2.5", label: "Seedance 2.5", provider: "byteplus", kind: "video", n: 6, credits: 240, spend: 240, promptSpend: 0 }, { model: "nano-banana-2", label: "Nano Banana 2", provider: "google", kind: "image", n: 9, credits: 72, spend: 72, promptSpend: 0 }], byProject: [], byPerson: [] } }));
   await page.route("**/api/workspaces/keys", (route) => route.fulfill({ json: { usesPlatformKeys: true, mode: "platform", canPlatform: true, keyring: true, allowance: null, credits: null, gatewayMinted: false, keys: [{ name: "ark", label: "Connected video account", does: "Seedance video · prompt writer", set: true, masked: "ark_••••1234" }, { name: "openai", label: "Connected language account", does: "Thinking models", set: false, masked: null }, { name: "xai", label: "xAI · Grok", does: "Crew", set: true, masked: "xai_••••" }] } }));
-  await page.route("**/api/crew/status", (route) => route.fulfill({ json: { connected: true, priced: true, model: "grok-4.6" } }));
+  await page.route("**/api/crew/status", (route) => route.fulfill({ json: { connected: true, priced: true } }));
   /* No grant held and nothing running: the Higgsfield account's row has nothing to show. */
   await page.route("**/api/higgsfield/consumer/connection", (route) => route.request().method() === "POST"
     ? route.fulfill({ status: 410, json: { code: "retired", error: "The connected account is no longer used. Past results stay in your Library." } })
@@ -178,7 +178,9 @@ test("Settings are Graphite over the real routes and speak their vocabulary; the
   await expect(page.getByTestId("settings-engine").nth(1)).toContainText("Unavailable");
   await expect(page.getByTestId("settings-engines")).not.toContainText("Verify checks");
   /* The Higgsfield sign-in is retired: no grant held and nothing running, so no account row, and no developer-API check. */
-  await expect(page.getByTestId("engine-xai")).toContainText("Connected · grok-4.6");
+  /* The crew's engine is named by its role, never by model or vendor (Amendment (iii) §E, Crew included). */
+  await expect(page.getByTestId("engine-xai")).toContainText("Connected");
+  await expect(page.getByTestId("engine-xai")).not.toContainText(/xAI|Grok/);
   await expect(page.getByTestId("engine-connected-account")).toHaveCount(0);
   await expect(page.getByTestId("connected-account-connect")).toHaveCount(0);
   await expect(page.getByTestId("engine-developer-api")).toHaveCount(0);

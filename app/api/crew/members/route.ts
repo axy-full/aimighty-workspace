@@ -1,5 +1,5 @@
 import { withTenant } from "@/lib/auth";
-import { NO_STORE, crewCaller, crewFailure, crewProject } from "@/lib/crew/http";
+import { NO_STORE, crewCaller, crewFailure, crewProject, shownMember, shownMembers } from "@/lib/crew/http";
 import { CREW_EFFORTS, STANCE_MAX } from "@/lib/crew/room";
 import { CrewError, addMember, listMembers, removeMember, updateMember, type MemberPatch } from "@/lib/crew/store";
 
@@ -11,7 +11,7 @@ export const GET = withTenant(async (req: Request) => {
   if (caller.response) return caller.response;
   try {
     const project = await crewProject(caller.userId, new URL(req.url).searchParams.get("projectId"));
-    return Response.json({ members: await listMembers(caller.userId, project.id) }, { headers: NO_STORE });
+    return Response.json({ members: shownMembers(await listMembers(caller.userId, project.id)) }, { headers: NO_STORE });
   } catch (error) { return crewFailure(error); }
 });
 
@@ -22,7 +22,7 @@ export const POST = withTenant(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const project = await crewProject(caller.userId, body.projectId);
     const member = await addMember(caller.userId, project.id, String(body.presetId ?? ""));
-    return Response.json({ member, members: await listMembers(caller.userId, project.id) }, { headers: NO_STORE });
+    return Response.json({ member: shownMember(member), members: shownMembers(await listMembers(caller.userId, project.id)) }, { headers: NO_STORE });
   } catch (error) { return crewFailure(error); }
 });
 
@@ -40,11 +40,11 @@ export const PATCH = withTenant(async (req: Request) => {
     if (body.name !== undefined) patch.name = text(body.name, 60, "The name");
     if (body.department !== undefined) patch.department = text(body.department, 80, "The role");
     if (body.stance !== undefined) patch.stance = text(body.stance, STANCE_MAX, "The stance");
-    if (body.effort !== undefined) { if (!CREW_EFFORTS.includes(body.effort)) throw new CrewError("Choose low, medium or high effort.", 400); patch.effort = body.effort; }
+    if (body.effort !== undefined) { if (!CREW_EFFORTS.includes(body.effort)) throw new CrewError("That setting is not available.", 400); patch.effort = body.effort; }
     if (body.active !== undefined) patch.active = body.active === true;
     if (body.isChair === true) patch.isChair = true;
     const member = await updateMember(caller.userId, String(body.id ?? ""), patch);
-    return Response.json({ member, members: await listMembers(caller.userId, member.projectId) }, { headers: NO_STORE });
+    return Response.json({ member: shownMember(member), members: shownMembers(await listMembers(caller.userId, member.projectId)) }, { headers: NO_STORE });
   } catch (error) { return crewFailure(error); }
 });
 

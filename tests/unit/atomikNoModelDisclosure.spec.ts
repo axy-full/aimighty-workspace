@@ -6,7 +6,8 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { TenantUser, TenantWorkspace } from "../../lib/tenant";
 import { HIGH, LOW, MEDIUM } from "../helpers/thinkingSlots";
-import { thinkingModelNames } from "../helpers/uiStrings";
+import { modelVendorEffortIn, modelVendorEffortWordsIn, thinkingModelNames } from "../helpers/uiStrings";
+import { repoFiles } from "../helpers/uiSurfaces";
 import { alignLedgerUnit } from "../helpers/ledgerUnit";
 import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { loadRouteModule } from "../helpers/vendorCostScan";
@@ -513,6 +514,136 @@ test("the person's own read and the session every page renders with carry the en
     expect(source, file).toContain("memberModels()");
     expect(source, file).toContain("memberRateTable(");
     expect(source, file).not.toMatch(/effectiveModels|buildRateTable/);
+  }
+});
+
+/** Every key named `model`, at any depth (Crew's room and quote held the engine's model under it). */
+function modelKeys(value: unknown, at = "$"): string[] {
+  if (!value || typeof value !== "object") return [];
+  if (Array.isArray(value)) return value.flatMap((item, i) => modelKeys(item, `${at}[${i}]`));
+  return Object.entries(value).flatMap(([key, item]) => [...(key === "model" ? [`${at}.model`] : []), ...modelKeys(item, `${at}.${key}`)]);
+}
+
+/*
+ * Crew (owner, 24 Oct 2026, item 14 (a)): Amendment (iii) §E covers it: no model, vendor or effort name in any string a person reads, and none
+ * in what a member is sent. The crew still runs on its engine at each seat's effort; the rows keep both, for pricing, the round and the platform.
+ */
+const CREW_ENGINE_FILES = new Set([
+  /* The engine's own prompt (each seat's role card names its effort to the engine), its SQL and its call: server-only, never sent to a person.
+     What a person reads from them (a refusal, a verify reason) is driven at run time below. */
+  "lib/crew/room.ts", "lib/crew/store.ts", "lib/crew/xai.ts",
+]);
+test("Crew: no string a person reads in its screens, routes or room names a model, a vendor or an effort", () => {
+  const files = repoFiles().filter((file) => /\.(ts|tsx)$/.test(file) && !file.startsWith("tests/")
+    && ((file.startsWith("components/") && /crew/i.test(file)) || file.startsWith("app/api/crew/") || (file.startsWith("lib/crew/") && !CREW_ENGINE_FILES.has(file))));
+  /* The engine row in Settings, the panel's Ask the crew, the take review, the room's hook and every Crew route are in the walk. */
+  for (const file of ["components/graphite/crew/XaiEngineRow.tsx", "components/graphite/board/agent/CrewReview.tsx", "components/graphite/board/review/CrewTakeReview.tsx",
+    "lib/crew/use-crew.ts", "lib/crew/http.ts", "lib/crew/round.ts", "app/api/crew/status/route.ts", "app/api/crew/members/route.ts"]) expect(files, file).toContain(file);
+  const hits = files.flatMap((file) => modelVendorEffortWordsIn(file, readFileSync(file, "utf8")).map((hit) => `${file}:${hit.line} "${hit.word}" in ${hit.text}`));
+  expect(hits).toEqual([]);
+  /* The matcher would have caught what the engine row showed before: the vendor and family eyebrow, the engine's id, and an effort line. */
+  for (const said of ["xAI · Grok", "Crew seats one Grok agent per member", "Choose low, medium or high effort."]) expect(modelVendorEffortIn(said), said).not.toEqual([]);
+  for (const said of ["Crew engine", "Connected", "Verified · available.", "Crew seats one agent per member, managed by Particl."]) expect(modelVendorEffortIn(said), said).toEqual([]);
+});
+
+test("Crew: the engine's status and Verify, the roster, a room, its quotes, a round and its minutes carry no model, vendor or effort", async () => {
+  const ws = await funded("crew");
+  const { xaiModel } = await import("../../lib/crew/xai");
+  const { seedProject } = await import("../../lib/workbench/studio");
+  const server = await import("../../lib/workbench/atomik-server");
+  const { db } = await import("../../lib/db");
+  const status = await route("app/api/crew/status/route.ts");
+  const members = await route("app/api/crew/members/route.ts");
+  const sessions = await route("app/api/crew/sessions/route.ts");
+  const room = await route("app/api/crew/sessions/[id]/route.ts");
+  const rounds = await route("app/api/crew/sessions/[id]/rounds/route.ts");
+  const minutes = await route("app/api/crew/sessions/[id]/minutes/route.ts");
+  const engine = xaiModel();
+  /* Each reply as a member is sent it: no model or vendor or effort word, not the crew engine's id, and no `model` or `effort` key. */
+  const crewSeen = (label: string, body: unknown) => {
+    seen.push(label);
+    const text = typeof body === "string" ? body : JSON.stringify(body);
+    expect(modelVendorEffortIn(text), `${label}: ${text.slice(0, 400)}`).toEqual([]);
+    expect(text, `${label}: the crew engine's id`).not.toContain(engine);
+    if (typeof body !== "string") { expect(modelKeys(body), label).toEqual([]); expect(effortKeys(body), label).toEqual([]); }
+  };
+  const scope = { "X-Workbench-Scope": `particl-active-${ws.id}-${person.id}` };
+  const send = (url: string, body?: unknown, method = body === undefined ? "GET" : "POST") =>
+    new Request(`https://particl.test${url}`, { method, headers: { ...scope, ...(body === undefined ? {} : { "Content-Type": "application/json" }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const prior = { mock: process.env.ENGINE_MOCK, key: process.env.XAI_API_KEY, fetch: globalThis.fetch };
+  try {
+    await inTenant(ws, async () => {
+      await server.atomikReady();
+      const project = seedProject();
+      project.id = `nd-crew-${randomUUID().slice(0, 8)}`; project.brief = "A courier on the last night train.";
+      await db().execute({ sql: "INSERT INTO workbench_projects(key,owner,project_id,name,body,revision,updated_at) VALUES(?,?,?,?,?,1,?)", args: [`${person.id}:${project.id}`, person.id, project.id, project.name, JSON.stringify(project), Date.now()] });
+
+      /* The engine row's two reads (Settings › Advanced): whether it is connected and priced, and Verify, which proves the key. */
+      const state = await answer(await status.GET!(send("/api/crew/status")));
+      expect(state.status).toBe(200);
+      expect(state.body).toEqual({ connected: true, priced: true });
+      crewSeen("GET /api/crew/status", state.body);
+      const verified = await answer(await status.POST!(send("/api/crew/status", {})));
+      expect(verified.body).toEqual({ ok: true, listed: true });
+      crewSeen("POST /api/crew/status", verified.body);
+
+      /* The roster: each seat has an effort on its row, and none is sent. A setting a seat cannot take is refused in words that name none. */
+      const roster = await answer(await members.GET!(send(`/api/crew/members?projectId=${project.id}`)));
+      const seated = roster.body.members as { id: string; name: string }[];
+      expect(seated.length).toBeGreaterThan(0);
+      crewSeen("GET /api/crew/members", roster.body);
+      expect((await db().execute({ sql: "SELECT COUNT(*) AS n FROM crew_members WHERE effort IS NOT NULL AND project_id=?", args: [project.id] })).rows[0].n).toBe(seated.length);
+      const renamed = await answer(await members.PATCH!(send("/api/crew/members", { id: seated[0].id, name: seated[0].name }, "PATCH")));
+      expect(renamed.status).toBe(200);
+      crewSeen("PATCH /api/crew/members", renamed.body);
+      const refused = await answer(await members.PATCH!(send("/api/crew/members", { id: seated[0].id, effort: "extreme" }, "PATCH")));
+      expect(refused.status).toBe(400);
+      crewSeen("PATCH /api/crew/members refused", refused.body);
+
+      /* A room: its quote before it exists, the room made, read, changed, moved, and listed. */
+      const goal = { projectId: project.id, goal: "Find the ending.", context: { brief: true, script: false, boards: false, cast: false, rig: false } };
+      const early = await answer(await sessions.POST!(send("/api/crew/sessions", { ...goal, quoteOnly: true })));
+      expect(early.status, JSON.stringify(early.body)).toBe(200);
+      crewSeen("POST /api/crew/sessions quote", early.body);
+      const made = await answer(await sessions.POST!(send("/api/crew/sessions", goal)));
+      expect(made.status, JSON.stringify(made.body)).toBe(200);
+      crewSeen("POST /api/crew/sessions", made.body);
+      const id = String((made.body.session as { id: string }).id), ctx = { params: Promise.resolve({ id }) };
+      /* The row keeps the engine it was opened on. */
+      expect((await db().execute({ sql: "SELECT model FROM crew_sessions WHERE id=?", args: [id] })).rows[0].model).toBe(engine);
+      crewSeen("GET /api/crew/sessions/[id]", (await answer(await room.GET!(send(`/api/crew/sessions/${id}`), ctx))).body);
+      crewSeen("PATCH /api/crew/sessions/[id] moved", (await answer(await room.PATCH!(send(`/api/crew/sessions/${id}`, { model: "current" }, "PATCH"), ctx))).body);
+      crewSeen("GET /api/crew/sessions", (await answer(await sessions.GET!(send(`/api/crew/sessions?projectId=${project.id}`)))).body);
+
+      /* A round: its quote, the round itself (the stream), and the minutes. */
+      const quote = await answer(await rounds.POST!(send(`/api/crew/sessions/${id}/rounds`, { quoteOnly: true }), ctx));
+      expect(quote.status, JSON.stringify(quote.body)).toBe(200);
+      crewSeen("POST /api/crew/sessions/[id]/rounds quote", quote.body);
+      const ran = await rounds.POST!(send(`/api/crew/sessions/${id}/rounds`, { maxCredits: quote.body.estimateCredits, round: 1 }), ctx);
+      expect(ran.status).toBe(200);
+      const stream = await ran.text();
+      expect(stream).toContain("event: done");
+      crewSeen("the round's stream", stream);
+      const read = await minutes.GET!(send(`/api/crew/sessions/${id}/minutes`), ctx);
+      expect(read.status).toBe(200);
+      const markdown = await read.text();
+      expect(markdown).toContain("# Crew minutes");
+      crewSeen("the minutes", markdown);
+      crewSeen("GET /api/crew/sessions/[id] after the round", (await answer(await room.GET!(send(`/api/crew/sessions/${id}`), ctx))).body);
+
+      /* Verify's reasons when the key is missing, refused or unreachable: said by role, never by vendor. Nothing leaves the process. */
+      process.env.ENGINE_MOCK = "0";
+      delete process.env.XAI_API_KEY;
+      crewSeen("Verify without a key", (await answer(await status.POST!(send("/api/crew/status", {})))).body);
+      process.env.XAI_API_KEY = "unit-only-never-sent";
+      globalThis.fetch = (async () => new Response("{}", { status: 401 })) as typeof fetch;
+      crewSeen("Verify refused", (await answer(await status.POST!(send("/api/crew/status", {})))).body);
+      globalThis.fetch = (async () => { throw new TypeError("offline"); }) as typeof fetch;
+      crewSeen("Verify unreachable", (await answer(await status.POST!(send("/api/crew/status", {})))).body);
+    });
+  } finally {
+    globalThis.fetch = prior.fetch;
+    for (const [key, value] of [["ENGINE_MOCK", prior.mock], ["XAI_API_KEY", prior.key]] as const) if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }
 });
 

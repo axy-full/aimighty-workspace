@@ -254,6 +254,20 @@ export function thinkingModelNames(text: string): string[] {
   return THINKING_MODEL_PATTERNS.flatMap((re) => [...text.matchAll(re)].filter((m) => !isImageEngine(text, (m.index ?? 0) + m[0].length) && !/image/i.test(m[0])).map((m) => m[0]));
 }
 
+/**
+ * The vendor names behind a text model, as words a person could read (case as the vendors write them, so a code key such as "xai" in
+ * vendorKey("xai") is not one). Crew is covered by Amendment (iii) §E (owner, 24 Oct 2026, item 14 (a)): no model, vendor or effort.
+ */
+export const TEXT_VENDOR_PATTERN = /\b(?:xAI|Grok|SpaceX|Anthropic|Claude|OpenAI|ChatGPT|Gemini)\b/g;
+/** Every thinking-model name, text vendor name or effort word in one string (the crew's screens and replies). */
+export function modelVendorEffortIn(text: string): string[] {
+  return [...thinkingModelNames(text), ...[...text.matchAll(TEXT_VENDOR_PATTERN)].map((m) => m[0]), ...[...text.matchAll(/\beffort\b/gi)].map((m) => m[0])];
+}
+/** Every model, vendor or effort word in the strings a person reads in one file (JSX text and string or template literals, never code). */
+export function modelVendorEffortWordsIn(fileName: string, source: string): UiWord[] {
+  return walk(fileName, source, modelVendorEffortIn, () => false).map(({ word, line, text }) => ({ word, line, text }));
+}
+
 /** JSX attributes the walk above treats as code that a settings row shows as words (`<Row name="…" value="…">`). */
 const SKIPPED_WORD_ATTRS = new Set(["name", "value"]);
 

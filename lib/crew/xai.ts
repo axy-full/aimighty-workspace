@@ -87,13 +87,13 @@ async function sendGrok(input: Parameters<typeof askGrok>[0]): Promise<GrokAnswe
 export async function verifyXai(): Promise<{ ok: boolean; models: string[]; reason?: string }> {
   if (engineMock()) return { ok: true, models: [xaiModel()] };
   const key = vendorKey("xai");
-  if (!key) return { ok: false, models: [], reason: "No xAI key is connected." };
+  if (!key) return { ok: false, models: [], reason: "No key is connected for the crew’s engine." };
   try {
     const response = await fetch(MODELS_ENDPOINT, { headers: { Authorization: `Bearer ${key}` }, cache: "no-store", signal: AbortSignal.timeout(15_000) });
-    if (!response.ok) return { ok: false, models: [], reason: `xAI answered ${response.status}.` };
+    if (!response.ok) return { ok: false, models: [], reason: `The crew’s engine answered ${response.status}.` };
     const json = await response.json() as { data?: { id?: string }[] };
     return { ok: true, models: (json.data ?? []).map((m) => String(m.id ?? "")).filter(Boolean).slice(0, 60) };
   } catch {
-    return { ok: false, models: [], reason: "xAI could not be reached." };
+    return { ok: false, models: [], reason: "The crew’s engine could not be reached." };
   }
 }
