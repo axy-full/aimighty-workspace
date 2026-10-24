@@ -1,6 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import Boundary, { type Fault } from "@/components/Boundary";
 import { PanelFault } from "./PanelFault";
 import type { WorkspaceAccount, useProjects } from "@/lib/workspace/data";
@@ -8,33 +8,23 @@ import type { LibraryEntry, ProjectLibrary } from "@/lib/workspace/library";
 import type { Project } from "@/lib/workbench/studio";
 import type { CreateSeed } from "@/lib/shell/create-project";
 import type { Shell } from "@/lib/shell/state";
-import { useNewInterface } from "@/lib/session";
-import { useCompact } from "@/lib/shell/use-compact";
-import { KIND_CARDS } from "@/lib/v12/board/kinds";
-import { NoAccessBoard } from "@/components/v12/board/NoAccessBoard";
 import type { BoardKindId, ScreenId } from "@/lib/shell/screens";
 import { FirstRun, type ProjectActions } from "./FirstRun";
 import { isControlRoomPage } from "./control-room/pages";
-import type { HomeViewProps } from "./home/HomeView";
 
 /**
- * The shell's mounts for the new interface's screens (lib/shell/screens.ts is the registry that says which exist).
+ * The shell's mounts for its screens (lib/shell/screens.ts is the registry that says which exist).
  * Each entry is loaded lazily, in the browser only, so a screen's code (React Flow for the board, say) is fetched
- * only where it is shown, and a customer with the switch off never downloads any of it. Each mount sits in its own
+ * only where it is shown. Each mount sits in its own
  * Boundary: one that throws shows its own fault card and the rest of the shell keeps working.
  *
  * This is the one place a screen's props are adapted from the shell's, so a stream changing its entry's props changes
  * this file's adapter, never SuitesShell. Streams own their entry modules; this file is the shell's.
  */
 const HomeEntry = dynamic(() => import("./home/HomeView").then((m) => m.HomeView), { ssr: false });
-/* The new interface's Home (components/v12/home, redesign C2): only with the switch on, so a customer never downloads it. */
-const V12HomeEntry = dynamic(() => import("@/components/v12/home/V12Home").then((m) => m.V12Home), { ssr: false });
 const BoardEntry = dynamic(() => import("./board/BoardView").then((m) => m.BoardView), { ssr: false });
-const NewBoardEntry = dynamic(() => import("@/components/v12/board/NewBoard").then((m) => m.NewBoard), { ssr: false });
 const ControlRoomEntry = dynamic(() => import("./control-room/ControlRoom").then((m) => m.ControlRoom), { ssr: false });
 const SettingsEntry = dynamic(() => import("./settings/SettingsView").then((m) => m.SettingsView), { ssr: false });
-/* The platform console (components/v12/platform, `?view=admin`): the platform owner's, in the new interface's frame, loaded only when asked for. */
-const PlatformEntry = dynamic(() => import("@/components/v12/platform/PlatformConsole").then((m) => m.PlatformConsole), { ssr: false });
 const PhoneEntry = dynamic(() => import("./phone/PhoneApp").then((m) => m.PhoneApp), { ssr: false });
 const AtomikEntry = dynamic(() => import("./atomik/panel/AtomikPanel").then((m) => m.AtomikPanel), { ssr: false });
 
@@ -61,14 +51,6 @@ function ScreenFault({ fault, name }: { fault: Fault; name: string }) {
 const BOARD_KINDS: readonly string[] = ["studio", "ads", "social"];
 const boardKind = (value: string | undefined): BoardKindId | null => (value && BOARD_KINDS.includes(value) ? (value as BoardKindId) : null);
 
-/**
- * Home's slot: with the new-interface switch on (lib/newInterface.ts), the new Home, inside the new frame's body
- * (components/v12/V12Shell.tsx); otherwise today's. Phone sizes never reach it (PhoneApp replaces the body).
- */
-function HomeSlot(props: HomeViewProps) {
-  return useNewInterface() ? <V12HomeEntry {...props} /> : <HomeEntry {...props} />;
-}
-
 /** The body of a screen that fills the shell's body (Home, the board, the control room); null for one that is not that kind. */
 export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenContext }): ReactNode {
   const { shell, scope, project, data } = ctx;
@@ -76,7 +58,7 @@ export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenConte
     case "home":
       return (
         <Boundary what="Home" probe="home" resetKey={`home:${scope}`} fallback={(f) => <ScreenFault fault={f} name="home" />}>
-          <HomeSlot scope={scope} projects={data.projects} status={data.status} error={data.error} onRetry={data.retry} onPick={ctx.projectActions.onPick}
+          <HomeEntry scope={scope} projects={data.projects} status={data.status} error={data.error} onRetry={data.retry} onPick={ctx.projectActions.onPick}
             onCreate={ctx.onCreate} onStarter={ctx.projectActions.onStarter} now={ctx.now} />
         </Boundary>
       );
@@ -84,7 +66,7 @@ export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenConte
     case "board-ads":
     case "board-social":
       return (
-        <Boundary what="The board" probe="board" resetKey={`board:${project?.id ?? ""}:${shell.params.kind ?? ""}:${shell.params.newboard ?? ""}`} fallback={(f) => <ScreenFault fault={f} name="board" />}>
+        <Boundary what="The board" probe="board" resetKey={`board:${project?.id ?? ""}:${shell.params.kind ?? ""}`} fallback={(f) => <ScreenFault fault={f} name="board" />}>
           <BoardOrNew ctx={ctx} />
         </Boundary>
       );
@@ -109,36 +91,17 @@ export function ScreenBody({ screen, ctx }: { screen: ScreenId; ctx: ScreenConte
 }
 
 /**
- * The platform console draws in the new interface's frame at desktop sizes. In a workspace without it, the owner is sent to today's
- * platform desk (/admin), which is where everything the console shows was before; the console has no second, older look of its own.
+ * The platform console's address (`?view=admin`): the platform owner is sent to the platform desk (/admin), where
+ * everything the console showed lives.
  */
 function PlatformSlot() {
-  const v12 = useNewInterface();
-  useEffect(() => { if (!v12) window.location.replace("/admin"); }, [v12]);
-  return v12 ? <PlatformEntry /> : null;
+  useEffect(() => { window.location.replace("/admin"); }, []);
+  return null;
 }
 
-/**
- * The board, or in the new interface its "New board" tab (`?newboard=1`, components/v12/board/NewBoard.tsx): a board not
- * made yet, so no project is involved. With the switch off, or on a phone, the address means nothing and the board shows.
- */
+/** The board. A link to a board that is not this person's: the server answers the id with nothing and the shell falls back to their own first board. */
 function BoardOrNew({ ctx }: { ctx: ScreenContext }) {
   const { shell, scope, project, items, library } = ctx;
-  const v12 = useNewInterface();
-  const compact = useCompact();
-  /* A link to a board that is not this person's (in another workspace, or gone): the server answers the id with nothing and the
-     shell falls back to their own first board. In the new interface that is said ("You don't have access"), never drawn as that
-     other board or as an empty one. Only the board the address named when this screen opened counts. */
-  const [asked, setAsked] = useState<string | null>(() => (typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("project")));
-  const ready = ctx.data.status === "ready";
-  const found = Boolean(asked) && (project?.id === asked || ctx.data.projects.some((p) => p.id === asked));
-  /* Found: the address was a board of theirs, and from here on the screen follows the address as always. */
-  if (asked && ready && found) setAsked(null);
-  if (v12 && !compact && asked && ready && !found && shell.params.newboard !== "1") return <NoAccessBoard onHome={shell.goHome} />;
-  if (v12 && !compact && shell.params.newboard === "1") {
-    const pick = KIND_CARDS.find((k) => k.id === shell.params.pick)?.id ?? null;
-    return <NewBoardEntry scope={scope} onCreate={ctx.onCreate} initialKind={pick} />;
-  }
   /* The board is for every workspace, so a workspace with no project yet gets Studio's first run here (New project, the starter) rather than a board that never opens. */
   if (!project && ctx.data.status === "ready") {
     return <div className="gx-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto" }} data-testid="board-no-project"><FirstRun stage="board" lead="Open or create a project to use the board." actions={ctx.projectActions} now={ctx.now} /></div>;
@@ -151,7 +114,7 @@ export function SettingsBody({ ctx }: { ctx: ScreenContext }) {
   const { shell } = ctx;
   return (
     <Boundary what="Settings" probe="settings" resetKey={`settings:${shell.wsTab}`} fallback={(f) => <ScreenFault fault={f} name="settings" />}>
-      <SettingsEntry account={ctx.account} section={shell.wsTab} open={shell.wsOpen} onOpenProject={(id) => { ctx.projectActions.onPick(id); shell.goBoard(); }} />
+      <SettingsEntry account={ctx.account} section={shell.wsTab} open={shell.wsOpen} />
     </Boundary>
   );
 }

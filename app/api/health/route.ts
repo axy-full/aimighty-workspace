@@ -16,6 +16,7 @@ import { dispatchMode } from "@/lib/dispatch";
 import { recentDispatches } from "@/lib/dispatch-log";
 import { deployedCommit } from "@/lib/deployment";
 import { vercelIdentityInProduction } from "@/lib/vercelGuard";
+import { thinkingHealth } from "@/lib/atomikThinking";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -176,6 +177,9 @@ export const GET = recoveryRoute(async function GET(req: Request) {
         // instead of answering. Its absence is itself the signal.
         cron: await cronStatus().catch(() => null),
         arkKeyConfigured: Boolean(vendorKey("ark")),
+        /* Whether Atomik's Thinking is served on each setting, by name only (owner, 24 Oct 2026): "Thinking: High · Medium · Low served",
+           or which are "not set" or "not served". Never a model id, an effort or a rate (lib/atomikThinking.ts › thinkingHealth). */
+        thinking: await thinkingHealth(),
         /* Whether invitations can be emailed, and from what address. Neither is
        a secret — the address appears in every invitation it sends — and
        without this the only way to tell was to send one and see. */

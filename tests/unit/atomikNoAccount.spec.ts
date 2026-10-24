@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { AUDIO_ENGINE, STILL_ENGINE, VIDEO_ENGINE } from "../helpers/runtimeIds";
 import { GEMINI_IDS, GROK_IDS, HIGH, LOW, MEDIUM, OPENAI_IDS, OTHER_CLAUDE } from "../helpers/thinkingSlots";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -187,7 +188,8 @@ test("Atomik's planner and agent think only with Claude, at the workspace's Thin
 
   /* The setting picks among the three only: a Gemini, Grok or OpenAI catalogue never plans, nor a Claude model outside the three; without the
      setting's model, a cheaper one of the three on every rate does (lib/atomikModelPolicy.ts, cheaperFallback). */
-  const entry = (id: string) => ({ id, name: id, owner: family(id), type: "language" as const, description: "", contextWindow: 200000, maxTokens: 8000, pricing: { input: "0.000003", output: "0.000015" } });
+  const entry = (id: string) => ({ id, name: id, owner: family(id), type: "language" as const, description: "", contextWindow: 200000, maxTokens: 8000, pricing: { input: "0.00000449", output: "0.0000173" } });
+  expect(vendorRatesIn(entry(MEDIUM).pricing), "made-up rates").toEqual([]);
   const served = [GEMINI, GEMINI_IDS[1], GROK_IDS[0], OPENAI_IDS[0]].map(entry);
   expect(policy.selectAtomikThinking("medium", "plan", served)).toBeNull();
   expect(policy.selectAtomikThinking("medium", "plan", [...served, entry(OTHER_CLAUDE[0])])).toBeNull();

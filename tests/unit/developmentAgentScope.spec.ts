@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { BUDGET_CLAUDE, FAST_STILL_ENGINE } from '../helpers/runtimeIds';
 import { MEDIUM, OPENAI_IDS } from '../helpers/thinkingSlots';
+import { vendorRatesIn } from '../helpers/vendorFigures';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -20,7 +21,10 @@ const dir = mkdtempSync(path.join(tmpdir(), 'particl-development-scope-'));
 process.env.PLATFORM_DATABASE_URL = 'file:' + path.join(dir, 'platform.db');
 process.env.KEYRING_SECRET ??= 'unit-test-keyring-secret-unit-test-keyring';
 /* The Medium slot's own model (tests/helpers/thinkingSlots), at a made-up rate. */
-const model: CatalogModel = { id: MEDIUM, name: 'Claude', owner: 'anthropic', type: 'language', description: '', contextWindow: 1_000_000, maxTokens: 64000, pricing: { input: .0000001, output: .0000003 } };
+const model: CatalogModel = { id: MEDIUM, name: 'Claude', owner: 'anthropic', type: 'language', description: '', contextWindow: 1_000_000, maxTokens: 64000, pricing: { input: .000000113, output: .000000379 } };
+test("the fixture's made-up rates are no catalogue entry's", () => {
+  expect(vendorRatesIn(model.pricing)).toEqual([]);
+});
 function workspace(): TenantWorkspace {
   const id = randomUUID();
   return { id, slug: 'unit', name: 'Unit', legacy: false, dbUrl: 'file:' + path.join(dir, id + '.db'), dbToken: null,

@@ -38,8 +38,6 @@ export type BoardCanvasProps = {
   onFreeMoved: (moves: FreeMove[]) => void;
   readOnly: boolean;
   onMoveEnd: (viewport: Viewport) => void;
-  /** The canvas's zoom at "100 %": above 1 on a large screen (lib/v12/board/screen-scale.ts); the most it zooms in is twice this. */
-  zoomBase?: number;
   onOpen: (id: string) => void;
   /** React Flow is ready to move its viewport (the first view waits for it). */
   onReady: () => void;
@@ -63,7 +61,7 @@ export type BoardCanvasProps = {
 /** Whether a drag is over a card (not a group's empty space, which lets presses through to the canvas). */
 const onCard = (target: EventTarget | null) => !!(target as HTMLElement | null)?.closest?.(".bd-node:not([data-container])");
 
-export function BoardCanvas({ placed, selection, onSelect, onFreeMoved, readOnly, onMoveEnd, zoomBase = 1, onOpen, onReady, placing, onPlace, onPresence, peerDrags, reorder, onDropFile, children }: BoardCanvasProps) {
+export function BoardCanvas({ placed, selection, onSelect, onFreeMoved, readOnly, onMoveEnd, onOpen, onReady, placing, onPlace, onPresence, peerDrags, reorder, onDropFile, children }: BoardCanvasProps) {
   const flow = useReactFlow();
   const [drag, setDrag] = useState<ReadonlyMap<string, BoardPoint>>(new Map());
   const [measured, setMeasured] = useState<ReadonlyMap<string, { width: number; height: number }>>(new Map());
@@ -195,7 +193,7 @@ export function BoardCanvas({ placed, selection, onSelect, onFreeMoved, readOnly
       zoomOnPinch
       zoomOnDoubleClick={false}
       minZoom={0.25}
-      maxZoom={2 * zoomBase}
+      maxZoom={2}
       onlyRenderVisibleElements={nodes.length > VISIBLE_ONLY_FROM}
       nodeDragThreshold={4}
       elevateNodesOnSelect={false}

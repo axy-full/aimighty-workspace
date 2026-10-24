@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
@@ -15,23 +16,33 @@ import { OFFERED_CATALOG_IDS, PRICED_TEXT_IDS, SNAPSHOT_CATALOG_IDS, STILL_CATAL
 import { AUTO_MODEL_IDS, DROPPED_MODEL_IDS } from "../../lib/modelAliases";
 import committedJson from "../../lib/modelCatalog.json";
 import { DIRECT_PRICE_TO_CONFIRM, UNMAPPED_DIRECT_MODEL_IDS } from "../../lib/textRoute";
+import { priceFigures, vendorRatesIn } from "../helpers/vendorFigures";
 
 /*
  * lib/modelCatalog.json freezes the gateway's public /v1/models for the ids we
  * offer (scripts/ops/snapshot-catalog.mjs). Prices feed billing, so the snapshot
  * must price every model a feature can pick, and must serve exactly what the
- * live read serves. The fixture is the verbatim excerpt, for every offered id,
- * of the same saved response the snapshot was written from (2026-10-08):
- * refresh the two together (snapshot-catalog.mjs --from=<saved> --priced-at=<day>).
+ * live read serves. The fixture is the excerpt, for every offered id, of the
+ * same saved response the snapshot was written from (2026-10-08), with every
+ * price figure made up: no fixture states a vendor's rate (owner, 23 Oct 2026).
+ * The rest of it, each price's shape included (keys, tiers, tier bounds,
+ * regions), is the saved response's. The reads below take the fixture with the
+ * snapshot's prices put back, so every comparison runs on the prices the
+ * snapshot was written from, and the first test pins those prices. Refresh the
+ * two together (snapshot-catalog.mjs --from=<saved> --priced-at=<day>), make the
+ * fixture's figures up again, and update the pin on purpose.
  */
 const committed = committedJson as unknown as CatalogSnapshot;
-const fixture = JSON.parse(readFileSync(path.join(__dirname, "../fixtures/gateway-models-2026-10-08.json"), "utf8")) as { data: unknown[] };
+const synthetic = JSON.parse(readFileSync(path.join(__dirname, "../fixtures/gateway-models-2026-10-08.json"), "utf8")) as { data: { id: string; pricing?: unknown }[] };
+const snapshotPricing = new Map(committed.models.map((m) => [m.id, m.pricing]));
+/* The saved response as the snapshot priced it: the fixture with the snapshot's prices in place of the made-up ones. */
+const fixture = { data: synthetic.data.map((m) => ({ ...m, pricing: snapshotPricing.get(m.id) })) as unknown[] };
 const SOURCE = "https://ai-gateway.vercel.sh/v1/models";
 const MAX_AGE_DAYS = 120;
-/* The live list also carries models we do not offer; the snapshot must drop them. */
+/* The live list also carries models we do not offer; the snapshot must drop them. Made-up ids and prices: no catalogue entry has either. */
 const UNOFFERED = [
-  { id: "google/veo-3.1-generate-001", type: "video", pricing: { video_duration_pricing: [{ resolution: "1080p", cost_per_second: "0.4" }] } },
-  { id: "bfl/flux-2-pro", type: "image", pricing: { image: "0.03" } },
+  { id: "google/test-video-unoffered", type: "video", pricing: { video_duration_pricing: [{ resolution: "1080p", cost_per_second: "0.0377" }] } },
+  { id: "bfl/test-image-unoffered", type: "image", pricing: { image: "0.0139" } },
 ];
 const gatewayData = [...fixture.data, ...UNOFFERED];
 
@@ -44,7 +55,7 @@ test.beforeEach(() => {
   saved = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
   for (const key of ENV_KEYS) delete process.env[key];
   Object.assign(process.env, {
-    AI_GATEWAY_API_KEY: "gw-unit-static", OPENAI_API_KEY: "sk-unit-static", ANTHROPIC_API_KEY: "ak-unit-static",
+    AI_GATEWAY_API_KEY: "gw-unit-static", OPENAI_API_KEY: "fake-openai-unit-static", ANTHROPIC_API_KEY: "ak-unit-static",
     GEMINI_API_KEY: "gm-unit-static", XAI_API_KEY: "xai-unit-static",
   });
   openAIListed = (fixture.data as { id: string }[]).filter((m) => m.id.startsWith("openai/")).map((m) => m.id.slice("openai/".length));
@@ -69,6 +80,26 @@ const priceOf = (value: unknown): number | null => {
   const n = typeof value === "string" && value.trim() ? Number(value) : typeof value === "number" ? value : NaN;
   return Number.isFinite(n) && n >= 0 ? n : null;
 };
+
+test("the fixture states no vendor's rate: only its price figures differ from the saved response, and the snapshot's prices are pinned", () => {
+  const shape = (v: unknown, key = ""): unknown => Array.isArray(v) ? v.map((x) => shape(x))
+    : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, shape(x, k)]))
+    : priceFigures(v, key).length ? "<figure>" : v;
+  expect(synthetic.data.length).toBe(committed.models.length);
+  for (const m of synthetic.data) {
+    expect(snapshotPricing.has(m.id), m.id).toBe(true);
+    // Every key, tier bound, size and flag where the saved response had it; only the figures differ.
+    expect(JSON.stringify(shape(m.pricing)), m.id).toBe(JSON.stringify(shape(snapshotPricing.get(m.id))));
+  }
+  for (const m of [...synthetic.data, ...UNOFFERED]) {
+    expect(priceFigures(m.pricing).length, m.id).toBeGreaterThan(0);
+    expect(vendorRatesIn(m.pricing), m.id).toEqual([]);
+  }
+  /* The snapshot's prices for the fixture's ids, pinned without writing them down: a change to any of them in lib/modelCatalog.json
+     fails here until it is checked against the saved response and this number is updated on purpose. */
+  const rows = JSON.stringify(synthetic.data.map((m) => [m.id, snapshotPricing.get(m.id)]));
+  expect(parseInt(createHash("sha256").update(rows).digest("hex").slice(0, 8), 16)).toBe(639848615);
+});
 
 test("every model a feature can pick has input and output prices and a provider in the snapshot", () => {
   const mustPrice = [...new Set<string>([
@@ -197,7 +228,7 @@ test("OpenAI models and stills are served on their provider's key; ENGINE_MOCK s
   // An entry whose provider does not match its owner is never served.
   const tampered = JSON.parse(JSON.stringify(snapshot)) as CatalogSnapshot;
   tampered.models[0].providerId = tampered.models[0].providerId === "openai" ? "google" : "openai";
-  Object.assign(process.env, { AI_GATEWAY_API_KEY: "gw-unit-static", OPENAI_API_KEY: "sk-unit-static", GEMINI_API_KEY: "gm-unit-static", ANTHROPIC_API_KEY: "ak-unit-static" });
+  Object.assign(process.env, { AI_GATEWAY_API_KEY: "gw-unit-static", OPENAI_API_KEY: "fake-openai-unit-static", GEMINI_API_KEY: "gm-unit-static", ANTHROPIC_API_KEY: "ak-unit-static" });
   now = new Set(staticCatalog(tampered).map((m) => m.id));
   expect(now.has(snapshot.models[0].id)).toBe(false);
 });
@@ -212,7 +243,7 @@ test("with the static catalogue, OpenAI text still needs an id the key can list;
   expect(ids).toContain("openai/gpt-image-2");
   expect(ids).toContain("anthropic/claude-sonnet-5");
   expect(ids).toContain("spacexai/grok-4.7");
-  expect(ids).not.toContain("google/veo-3.1-generate-001");
+  expect(ids).not.toContain(UNOFFERED[0].id);
 });
 
 test("in static mode Claude and Grok text is offered where its calls will go (direct needs the key, the gateway needs only the gateway); Gemini text is always direct, so it needs the Gemini key and never the gateway", () => {

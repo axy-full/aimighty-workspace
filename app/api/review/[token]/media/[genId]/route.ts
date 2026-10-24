@@ -5,7 +5,6 @@ import { db, ready } from "@/lib/db";
 import { openOriginalStream, originalSize } from "@/lib/storage";
 import { originalMediaOf, type OriginalMedia } from "@/lib/originalMedia";
 import { byteRange } from "@/lib/mediaRange";
-import { downloadFilename } from "@/lib/downloadName";
 import { attachmentDisposition } from "@/lib/contentDisposition";
 
 export const dynamic = "force-dynamic";
@@ -23,23 +22,34 @@ type Ctx = { params: Promise<{ token: string; genId: string }> };
  * sends its clients. The bytes stream through rather than redirect, so a
  * revoked link stops working at once instead of when a signature lapses.
  */
+/**
+ * A downloaded file's name on a client link: what the page already shows (the shot and the version), never the
+ * workspace's naming template, which can carry the engine or who made the take.
+ */
+function clientName(shot: unknown, version: unknown): string {
+  const code = typeof shot === "string" ? shot.trim().replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) : "";
+  const v = Number(version);
+  return `${code || "take"}_v${Number.isSafeInteger(v) && v > 0 ? v : 1}`;
+}
+
 export const GET = async function GET(req: Request, { params }: Ctx) {
   const { token, genId } = await params;
   const found = await resolveShare(token);
   if (!found) return new Response("This review link has expired or been withdrawn.", { status: 404 });
 
-  const take = await runInTenant(found.workspace, async (): Promise<{ media: OriginalMedia; bytes: number | null } | null> => {
+  const take = await runInTenant(found.workspace, async (): Promise<{ media: OriginalMedia; bytes: number | null; name: string } | null> => {
     await ready();
     /* A Crew review link also plays the takes waiting for review in its production (lib/security/review-link.ts). */
     const states = found.review ? "('picked','approved')" : "('approved')";
     const rs = await db().execute({
-      sql: `SELECT kind, params, bytes FROM generations WHERE id = ? AND project_id = ? AND review_state IN ${states} AND deleted = 0 AND status = 'succeeded' LIMIT 1`,
+      sql: `SELECT g.kind, g.params, g.bytes, g.version, s.code AS shot_code FROM generations g LEFT JOIN shots s ON s.id = g.shot_id
+            WHERE g.id = ? AND g.project_id = ? AND g.review_state IN ${states} AND g.deleted = 0 AND g.status = 'succeeded' LIMIT 1`,
       args: [genId, found.share.projectId],
     });
-    const row = rs.rows[0] as { kind?: unknown; params?: unknown; bytes?: unknown } | undefined;
+    const row = rs.rows[0] as { kind?: unknown; params?: unknown; bytes?: unknown; version?: unknown; shot_code?: unknown } | undefined;
     if (!row) return null;
     const bytes = Number(row.bytes);
-    return { media: originalMediaOf({ kind: row.kind ?? "video", params: row.params }), bytes: Number.isSafeInteger(bytes) && bytes > 0 ? bytes : null };
+    return { media: originalMediaOf({ kind: row.kind ?? "video", params: row.params }), bytes: Number.isSafeInteger(bytes) && bytes > 0 ? bytes : null, name: clientName(row.shot_code, row.version) };
   });
   if (!take) return new Response("Not part of this review.", { status: 404 });
   const { media } = take;
@@ -67,7 +77,7 @@ export const GET = async function GET(req: Request, { params }: Ctx) {
   try {
     return await runInTenant(found.workspace, async () => {
       // A 3D model is not something a browser shows; it leaves as a named file.
-      if (media.kind === "model") headers["Content-Disposition"] = attachmentDisposition(await downloadFilename(genId, media.ext));
+      if (media.kind === "model") headers["Content-Disposition"] = attachmentDisposition(`${take.name}.${media.ext}`);
       /* iOS asks for many small ranges per play. The size recorded when the
          original was stored answers them without a storage probe each time;
          storage is asked only when the row has none, or the object disagrees

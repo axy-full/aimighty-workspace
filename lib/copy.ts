@@ -68,6 +68,10 @@ export const THINKING = {
   sampleLine: "Plans and writing quote higher at High",
   workspaceDefault: "Default for new productions",
   adminsOnly: "Admins only",
+  /** Whether each setting is served, in the platform owner's health detail (GET /api/health): by name, never a model or an effort. */
+  served: "served",
+  notSet: "not set",
+  notServed: "not served",
 } as const;
 
 /** A job's three ticks, at one price (Amendment (iii) A3). */
@@ -138,6 +142,53 @@ export const PLACEHOLDERS = {
   makeHeadline: "What are we making?",
 } as const;
 
+/**
+ * The Brief's floor questions and pills (Amendment (iii) H, "Brief (the interview)"), as the owner drafted them for the Ad film,
+ * until his edit of the floor rows lands. "Other" is the field. The spend limit offers "No limit" only: H's
+ * figures are samples awaiting the owner's ruling. Read by the question engine's Brief checklist.
+ */
+export const QUESTIONS = {
+  other: "Other",
+  kind: "What are we making?",
+  kindAd: "Ad",
+  kindShortFilm: "Short film",
+  kindSocial: "Social",
+  kindMusicVideo: "Music video",
+  length: "How long?",
+  sec6: "6 s",
+  sec15: "15 s",
+  sec30: "30 s",
+  sec60: "60 s",
+  min1: "1 min",
+  min3: "3 min",
+  min5: "5 min",
+  plays: "Where does it play?",
+  playsWide: "TV and cinema 16:9",
+  playsPhone: "Phone 9:16",
+  playsSquare: "Square 1:1",
+  playsSeveral: "Several",
+  language: "Which language?",
+  hindi: "Hindi",
+  english: "English",
+  both: "Both",
+  real: "Is anyone real in it?",
+  realNoOne: "No one",
+  realConsent: "Yes, and I have their consent",
+  realNotYet: "Yes, not yet",
+  realProduct: "A real product only",
+  material: "What do you already have?",
+  materialNothing: "Nothing yet",
+  materialScript: "A script or deck",
+  materialMedia: "Photos or clips",
+  ceiling: "A spend limit for this film?",
+  ceilingNone: "No limit",
+  /** "No limit" as it reads inside "I assumed … · Change". */
+  noLimit: "no limit",
+  /** A row read in place of its question (R2, H): "I assumed Hindi · Change", "from the brief · Change" (with the step's name). */
+  assumed: "I assumed",
+  fromThe: "from the",
+} as const;
+
 /** Money words (rule 14; Amendment (ii) A3: "free" is lowercase). */
 export const MONEY = {
   free: "free",
@@ -168,5 +219,5 @@ export const SITE = {
 
 /** The whole table, by section; the strings test walks it. */
 export const COPY = {
-  STEPS, BUTTONS, MODES, THINKING, TICKS, CARD_STATES, ELEMENT_KINDS, SETTINGS, LIBRARY, PLACEHOLDERS, MONEY, BRIEF, SITE,
+  STEPS, BUTTONS, MODES, THINKING, TICKS, CARD_STATES, ELEMENT_KINDS, SETTINGS, LIBRARY, PLACEHOLDERS, QUESTIONS, MONEY, BRIEF, SITE,
 } as const;

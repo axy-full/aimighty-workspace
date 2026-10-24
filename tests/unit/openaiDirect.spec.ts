@@ -6,6 +6,7 @@ import { gatewayPost, gatewayChat, explainGatewayFailure } from '../../lib/gatew
 import { languageAuth, languageModel } from '../../lib/language-provider';
 import { openAIDirectBody, openaiDirectPost, directTextCostUsd, sdkTextUsage, textVendor, TEXT_PROVIDER_HEADER } from '../../lib/openai-direct';
 import { executeDevelopmentAgent, type DevelopmentCall } from '../../lib/workbench/development-server';
+import { vendorRatesIn } from '../helpers/vendorFigures';
 
 const workspace = (keys: Record<string, string>, platform = false): TenantWorkspace => ({ id: 'direct-openai-fixture', slug: 'direct-openai-fixture', name: 'Direct OpenAI fixture', legacy: false, dbUrl: 'file::memory:', dbToken: null, keys, usesPlatformKeys: platform, allowanceUsd: null, gatewayKeyId: null, ownerId: 'owner', createdAt: 0, suspendedAt: null, suspendedReason: null, flaggedAt: null, flagNote: null, concurrency: 3, rendersPerHour: 30, storageQuotaBytes: null, deletedAt: null });
 const fakeKey = 'test-openai-key-never-sent';
@@ -72,7 +73,8 @@ test('installed OpenAI SDK sends Responses structured output and native maximum 
 });
 test('development agent sends one direct OpenAI request and reports submitted errors without fallback', async () => {
   await runInTenant(workspace({ openai: fakeKey }), async () => {
-    const input: DevelopmentCall = { model: { id: model, name: 'GPT-6 Astra', owner: 'openai', type: 'language', description: '', contextWindow: 1050000, maxTokens: 128000, reasoningOptions: [{ type: 'effort', values: ['high'] }], pricing: { input: .00001, output: .00005 } }, effort: 'high', stage: 'draft', kind: 'idea', instructions: 'Develop ideas.', prompt: 'A film.', maxTokens: 4000, chunk: { index: 0, start: 0, end: 7, segments: [] } };
+    const input: DevelopmentCall = { model: { id: model, name: 'Astra fixture', owner: 'openai', type: 'language', description: '', contextWindow: 1050000, maxTokens: 128000, reasoningOptions: [{ type: 'effort', values: ['high'] }], pricing: { input: .0000153, output: .0000769 } }, effort: 'high', stage: 'draft', kind: 'idea', instructions: 'Develop ideas.', prompt: 'A film.', maxTokens: 4000, chunk: { index: 0, start: 0, end: 7, segments: [] } };
+    expect(vendorRatesIn(input.model.pricing)).toEqual([]);
     let calls = 0;
     await expect(executeDevelopmentAgent(input, { method: 'api-key', token: fakeKey, vendor: 'openai' }, async (url) => { calls++; expect(String(url)).toBe('https://api.openai.com/v1/responses'); return Response.json({ error: { message: 'Fixture outage', type: 'server_error', code: 'server_error' } }, { status: 503 }); })).rejects.toMatchObject({ providerSubmitted: true });
     expect(calls).toBe(1);
@@ -91,11 +93,12 @@ test('incomplete and refused Responses retain paid usage and expose the correct 
 
 
 test('raw and SDK receipts preserve cache categories and missing SDK defaults never become known zero', async () => {
-  const priced = { id: model, owner: 'openai', name: 'Astra', type: 'language' as const, description: '', contextWindow: 1050000, maxTokens: 128000, pricing: { input: .00001, output: .00005, input_cache_read: .000001, input_cache_write: .0000125 } };
+  const priced = { id: model, owner: 'openai', name: 'Astra', type: 'language' as const, description: '', contextWindow: 1050000, maxTokens: 128000, pricing: { input: .0000153, output: .0000769, input_cache_read: .00000139, input_cache_write: .0000213 } };
+  expect(vendorRatesIn(priced.pricing)).toEqual([]);
   await runInTenant(workspace({ openai: fakeKey }), async () => {
     const direct = await openaiDirectPost({ model, messages: [{ role: 'user', content: 'Return JSON.' }] }, { fetch: async () => Response.json(response()) });
     const usage = JSON.parse(direct.text).usage;
-    expect(directTextCostUsd(priced, usage)).toBeCloseTo(58 * .00001 + 12 * .000001 + 30 * .0000125 + 20 * .00005, 12);
+    expect(directTextCostUsd(priced, usage)).toBeCloseTo(58 * .0000153 + 12 * .00000139 + 30 * .0000213 + 20 * .0000769, 12);
     for (const details of [{}, { cached_tokens: 0 }, { cache_write_tokens: 0 }, { cached_tokens: null, cache_write_tokens: 0 }, { cached_tokens: '0', cache_write_tokens: 0 }, { cached_tokens: 80, cache_write_tokens: 30 }]) expect(directTextCostUsd(priced, { ...usage, prompt_tokens_details: details })).toBeNull();
     for (const missing of [false, true]) {
       const value = response();

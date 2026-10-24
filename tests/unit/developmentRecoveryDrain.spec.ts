@@ -1,5 +1,6 @@
 import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { MEDIUM } from "../helpers/thinkingSlots";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { test, expect } from '@playwright/test';
 import { createClient } from '@libsql/client';
 import { mkdtempSync } from 'node:fs';
@@ -34,7 +35,8 @@ for (const condition of ['queued-phase', 'started-phase', 'uncertain-phase', 'pa
     const native = createPlatformDatabaseClient({ url: ws.dbUrl });
     const fixturePlatform = createClient({ url: process.env.PLATFORM_DATABASE_URL! });
     /* The Medium slot's own model (tests/helpers/thinkingSlots), at a made-up rate. */
-    const model: CatalogModel = { id: MEDIUM, name: 'Claude fixture', owner: 'anthropic', type: 'language', description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: .0000001, output: .0000003 } };
+    const model: CatalogModel = { id: MEDIUM, name: 'Claude fixture', owner: 'anthropic', type: 'language', description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: .000000113, output: .000000379 } };
+    expect(vendorRatesIn(model.pricing)).toEqual([]);
     let jobId = '';
     await runInTenant(ws, async () => {
       await ready(); await fundFixtureWorkspace();

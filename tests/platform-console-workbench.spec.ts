@@ -4,10 +4,9 @@ import { randomBytes } from "node:crypto";
 import { password, signupInvite } from "./helpers/identityAdmin";
 import { localPlatformDbUrl, signInLocally } from "./helpers/workbenchLocal";
 import { signInToRedesign } from "./helpers/newInterface";
-import { DEFAULT_PLANS } from "../lib/plans";
 
 /**
- * The platform console (`?view=admin`, components/v12/platform), end to end on a local ENGINE_MOCK server started with
+ * The platform console's routes (`?view=admin` sends the owner to /admin since the prototype-12 console was deleted, 23 Oct 2026), end to end on a local ENGINE_MOCK server started with
  * SUPER_ADMIN_EMAIL=platform-owner@example.test (the mock-server script does). The platform owner's, and nobody else's: every
  * route behind it, and the page itself, refuse a member and a stranger. Each of the owner's changes (Grant credits, Pause and
  * Resume, Invite, Revoke, the Public site switches, a saved rule or limit) writes its audit line, read here from the platform
@@ -218,145 +217,19 @@ test("the Overview, the models and the failed saves read from the server, in the
   expect(await audit("action = 'save.retried'")).toEqual(before);
 });
 
-test("desktop: the nine places draw, work and save as they are touched; no horizontal overflow", async ({ page, request }, info) => {
-  test.skip(!DESKTOP.includes(info.project.name), "the console is desktop only");
-  test.setTimeout(420_000);
+test("desktop, the switch on: the platform owner asking for the console by its address is sent to the platform desk (/admin)", async ({ page }, info) => {
+  test.skip(!DESKTOP.includes(info.project.name), "desktop: a phone never draws the console");
+  test.setTimeout(240_000);
   await owner12(page);
-  const target = (await signInLocally(request, `Console Row ${randomBytes(3).toString("hex")}`)).workspace;
   await page.goto("/suites?view=admin");
-  const console_ = page.getByTestId("platform-console");
-  await expect(console_).toBeVisible({ timeout: 90_000 });
-  /* Overview: four tiles, five health cells, what is running. */
-  await expect(page.getByTestId("pc-tile-workspaces")).not.toHaveText("—", { timeout: 30_000 });
-  await expect(page.getByTestId("pc-health").locator("[data-testid^='pc-health-']")).toHaveCount(5);
-  await expect(page.getByTestId("pc-running")).toContainText("Running ");
+  await expect(page).toHaveURL(/\/admin(?:$|[?#])/, { timeout: 90_000 });
+  await expect(page.getByTestId("platform-console")).toHaveCount(0);
   expect(await noOverflow(page)).toBe(true);
-  await expect(page.locator(".v12-pc-nav .v12-pc-navitem")).toHaveCount(9);
-
-  /* Who can join. */
-  await page.getByTestId("pc-nav-access").click();
-  await expect(page).toHaveURL(/section=access/);
-  const email = `console-${randomBytes(4).toString("hex")}@example.test`;
-  await page.getByTestId("pc-invite-email").fill(email);
-  await page.getByTestId("pc-invite-name").fill("Console Invitee");
-  await page.getByTestId("pc-invite-send").click();
-  const row = page.getByTestId("pc-invite").filter({ hasText: email });
-  await expect(row).toBeVisible({ timeout: 30_000 });
-  await row.getByTestId("pc-invite-more").click();
-  await page.getByTestId("pc-invite-revoke").click();
-  await expect(row).toHaveCount(0, { timeout: 30_000 });
-  await expect(page.getByTestId("pc-request").or(page.getByTestId("pc-requests-empty")).first()).toBeVisible();
-  expect(await noOverflow(page)).toBe(true);
-
-  /* Public site: a switch saves as it is touched; turning one on says so with an Undo. */
-  await page.getByTestId("pc-nav-site").click();
-  const signup = page.getByTestId("pc-site-open-signup");
-  await expect(signup).toHaveAttribute("aria-checked", "false", { timeout: 30_000 });
-  await signup.click();
-  await expect(page.getByTestId("v12-toast")).toContainText("Open sign-up is on");
-  await expect(signup).toHaveAttribute("aria-checked", "true");
-  await page.getByTestId("v12-toast-action").click();
-  await expect(signup).toHaveAttribute("aria-checked", "false", { timeout: 30_000 });
-  expect(((await json(await page.request.get("/api/admin/site"))) as { openSignup: boolean }).openSignup).toBe(false);
-
-  /* All workspaces: search, the side sheet, Grant credits, Pause and Resume. */
-  await page.getByTestId("pc-nav-workspaces").click();
-  await page.getByTestId("pc-ws-search").fill(target.name);
-  const wsRow = page.getByTestId("pc-ws-row").filter({ hasText: target.name });
-  await expect(wsRow).toHaveCount(1, { timeout: 30_000 });
-  await wsRow.click();
-  const sheet = page.getByTestId("pc-sheet");
-  await expect(sheet).toBeVisible();
-  await expect(page).toHaveURL(new RegExp(`sheet=${target.id}`));
-  await page.getByTestId("pc-grant-amount").fill("25");
-  await page.getByTestId("pc-grant-reason").fill("For the console test");
-  await page.getByTestId("pc-grant-send").click();
-  await expect(page.getByTestId("v12-toast")).toContainText("Added");
-  await expect(page.getByTestId("pc-sheet-history")).toContainText("For the console test", { timeout: 30_000 });
-  await expect(page.getByTestId("pc-sheet-changes")).toContainText("Added");
-  await page.getByTestId("pc-pause").click();
-  await page.getByTestId("pc-pause-reason").fill("Checking");
-  await page.getByTestId("pc-pause-confirm").click();
-  await expect(wsRow).toContainText("Paused", { timeout: 30_000 });
-  await page.getByTestId("pc-resume").click();
-  await expect(wsRow).toContainText("Active", { timeout: 30_000 });
-  expect(await noOverflow(page)).toBe(true);
-  await page.keyboard.press("Escape");
-  await expect(sheet).toHaveCount(0);
-  expect((await audit("workspace_id = ?", [target.id])).map((l) => l.action)).toEqual(["credits.granted", "workspace.paused", "workspace.resumed"]);
-  /* The house reads "House · pays at cost" and cannot be granted credits. */
-  await page.getByTestId("pc-ws-search").fill("");
-  const house = page.getByTestId("pc-ws-row").filter({ hasText: "pays at cost" });
-  if (await house.count()) {
-    await house.first().click();
-    await expect(page.getByTestId("pc-grant-send")).toBeDisabled();
-    await page.keyboard.press("Escape");
-  }
-
-  /* AI models: engines with their prices, text models grouped by provider; a pick saves. */
-  await page.getByTestId("pc-nav-engines").click();
-  const video = page.getByTestId("pc-model-video");
-  await expect(video).toBeVisible({ timeout: 30_000 });
-  const was = ((await json(await page.request.get("/api/admin/console/models"))) as { defaults: { video: string } }).defaults.video;
-  await video.click();
-  const pick = page.getByTestId("pc-model-video-list").locator(`[role=option]:not([data-id="${was}"])`).first();
-  if (await pick.count()) {
-    const id = await pick.getAttribute("data-id");
-    await pick.click();
-    await expect(page.getByTestId("v12-toast")).toContainText("Saved");
-    expect(((await json(await page.request.get("/api/admin/console/models"))) as { defaults: { video: string } }).defaults.video).toBe(id);
-    await page.request.patch("/api/admin/platform-layer", { data: { key: "models", reset: true } });
-  }
-  await page.getByTestId("pc-model-enhance").click();
-  await expect(page.getByTestId("pc-model-enhance-list")).toContainText("/1M");
-  await page.keyboard.press("Escape");
-
-  /* Style rules: add, write, remove with Undo; Reset to defaults. */
-  await page.getByTestId("pc-nav-rules").click();
-  await expect(page.getByTestId("pc-rule").first()).toBeVisible({ timeout: 30_000 });
-  const count = await page.getByTestId("pc-rule").count();
-  await page.getByTestId("pc-rule-add").click();
-  const text = page.getByTestId("pc-rule-text").last();
-  await text.fill("Console test rule: keep it short.");
-  await text.press("Enter");
-  await expect.poll(async () => ((await json(await page.request.get("/api/admin/platform-layer"))) as { layer: { rules: { text: string }[] } }).layer.rules.some((r) => r.text.startsWith("Console test rule")), { timeout: 30_000 }).toBe(true);
-  await expect(page.getByTestId("pc-rule")).toHaveCount(count + 1);
-  await page.getByTestId("pc-rule").last().getByTestId("pc-rule-remove").click();
-  await expect(page.getByTestId("v12-toast")).toContainText("Rule removed");
-  await page.getByTestId("v12-toast-action").click();
-  await expect(page.getByTestId("pc-rule")).toHaveCount(count + 1);
-  await page.getByTestId("pc-rules-reset").click();
-  await expect(page.getByTestId("pc-rule")).toHaveCount(count, { timeout: 30_000 });
-
-  /* Limits: Save keeps the numbers; Reset puts the defaults back. */
-  await page.getByTestId("pc-nav-caps").click();
-  const hourly = page.getByTestId("pc-limit-rendersPerHour");
-  await expect(hourly).toBeVisible({ timeout: 30_000 });
-  await hourly.fill("77");
-  await page.getByTestId("pc-limits-save").click();
-  await expect(page.getByTestId("v12-toast")).toContainText("Saved");
-  await page.reload();
-  await expect(page.getByTestId("pc-limit-rendersPerHour")).toHaveValue("77", { timeout: 60_000 });
-  await page.getByTestId("pc-limits-reset").click();
-  await expect(page.getByTestId("pc-limit-rendersPerHour")).not.toHaveValue("77", { timeout: 30_000 });
-
-  /* Plans & prices: read only, from config; Edit prices says why it is off. */
-  await page.getByTestId("pc-nav-plans").click();
-  /* One card per plan in the platform layer's list (lib/plans.ts: the new Individual and Business plans since #661, with the retired ones), not a number typed here. */
-  await expect(page.getByTestId("pc-plan")).toHaveCount(DEFAULT_PLANS.length);
-  const edit = page.getByTestId("pc-edit-prices");
-  await expect(edit).toHaveAttribute("aria-disabled", "true");
-  await edit.hover();
-  await expect(page.getByText("Prices are set in config — checkout comes later").first()).toBeVisible({ timeout: 5_000 });
-
-  /* Failed saves: rows with Retry save, or "Nothing at risk." */
-  await page.getByTestId("pc-nav-risk").click();
-  await expect(page.getByTestId("pc-risk-row").or(page.getByTestId("pc-risk-empty")).first()).toBeVisible({ timeout: 60_000 });
-  expect(await noOverflow(page)).toBe(true);
-  /* The left column and the place both fit the window, and the primary of each place is reachable without scrolling the page sideways. */
-  const box = await page.getByTestId("pc-main").boundingBox();
-  expect(box && box.width).toBeGreaterThan(600);
 });
+
+/* The console's own screen (components/v12/platform) went with the prototype-12 build (23 Oct 2026; docs/old-shells.md). Its routes stay and are
+   checked above; its Grant, Pause and Resume, Invite and the house row are the platform desk's at /admin (tests/platform-desk.spec.ts). */
+test.fixme("desktop: the console's nine places draw and save as they are touched; the house row says it pays at cost and its Grant is off; plans are read-only — no home: the prototype-12 console is deleted; /admin holds its actions (tests/platform-desk.spec.ts); owner question: does v31.16 bring a console back?", () => {});
 
 test("a member's avatar menu has no console, and a phone never draws it", async ({ page, browser }, info) => {
   const isPhone = PHONE.includes(info.project.name);
@@ -367,10 +240,11 @@ test("a member's avatar menu has no console, and a phone never draws it", async 
     await signInToRedesign(mine.request, "Console Bystander");
     await mine.goto("/suites?view=home");
     if (!isPhone) {
-      await expect(mine.getByTestId("v12-avatar")).toBeVisible({ timeout: 90_000 });
-      await mine.getByTestId("v12-avatar").click();
-      await expect(mine.getByTestId("v12-account-menu")).toBeVisible();
-      await expect(mine.getByTestId("v12-account-platform")).toHaveCount(0);
+      /* The switch on draws today's shell (the prototype-12 header went with that build): its avatar menu has no platform desk for a member. */
+      await expect(mine.getByTestId("workspace-avatar")).toBeVisible({ timeout: 90_000 });
+      await mine.getByTestId("workspace-avatar").click();
+      await expect(mine.getByTestId("settings-menu")).toBeVisible();
+      await expect(mine.getByTestId("settings-platform-desk")).toHaveCount(0);
       await expect(mine.getByText(/Platform (console|desk)/)).toHaveCount(0);
       await mine.keyboard.press("Escape");
     }

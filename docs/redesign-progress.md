@@ -1,4 +1,6 @@
-# Redesign progress log (prototype 12)
+# Redesign progress log (the prototype-12 build, deleted 23 Oct 2026)
+
+> **23 Oct 2026: the prototype-12 build is deleted** (owner, 23 Oct, 14:35, item 5; docs/old-shells.md › "The prototype-12 build deleted"). This log is that build's history; v31.16 is built behind the same switch from scratch, and its progress is not logged here.
 
 The running log of the overnight redesign build. A restarted session reads this file first, then docs/redesign-plan.md, and picks up from **Next** below.
 

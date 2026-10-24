@@ -9,9 +9,6 @@ import { RulesSection } from "./rules/RulesSection";
 import { ConnectionsSection } from "./connections/ConnectionsSection";
 import { AdvancedSection } from "./advanced/AdvancedSection";
 import { useGoSettings } from "./navigate";
-import { useNewInterface } from "@/lib/session";
-import { useShell } from "@/lib/shell/state";
-import { CreditsBilling } from "@/components/v12/settings/CreditsBilling";
 import "./settings.css";
 
 /**
@@ -29,20 +26,11 @@ const FOOT: Partial<Record<SettingsSectionId, string>> = {
   rules: "Spending rules belong to people: Atomik prepares and explains, you decide.",
 };
 
-export function SettingsView({ account, section, open, onOpenProject }: { account: WorkspaceAccount | null; section: string; open: string | null; onOpenProject?: (id: string) => void }) {
+export function SettingsView({ account, section, open }: { account: WorkspaceAccount | null; section: string; open: string | null }) {
   const go = useGoSettings();
   const tabs = useRef<(HTMLButtonElement | null)[]>([]);
-  const newInterface = useNewInterface();
-  const shell = useShell();
   if (!isBuiltSection(section)) return <WorkspaceView account={account} />;
   const fold = isSettingsFold(open) ? open : null;
-  /* With the new interface on, a desktop window's Credits & billing is prototype 12's screen (components/v12/settings).
-     Its Top up opens today's flow unchanged: this section with its packs open, which still draws today's screen. */
-  if (newInterface && !shell.phone.on && section === "credits" && !fold) {
-    return <CreditsBilling account={account} onTopUp={() => go("credits", "packs")} onOpenBoard={(id) => onOpenProject?.(id)} />;
-  }
-  /* In the new interface on a desktop window the section is called what its page is: Credits & billing (the phone and today's screens keep Plan & credits). */
-  const labelOf = (id: SettingsSectionId, label: string) => (newInterface && !shell.phone.on && id === "credits" ? "Credits & billing" : label);
   /* ←/→ walk the sections, Home/End jump; a section opens on press, as the master's segment does. */
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
     const at = tabs.current.findIndex((el) => el === document.activeElement);
@@ -58,13 +46,13 @@ export function SettingsView({ account, section, open, onOpenProject }: { accoun
         <div className="gs-head">
           <div className="gs-title">
             <span className="gs-eyebrow">Settings</span>
-            <h1 className="gs-h1" data-testid="settings-title">{labelOf(section, sectionLabel(section))}</h1>
+            <h1 className="gs-h1" data-testid="settings-title">{sectionLabel(section)}</h1>
           </div>
           <div className="gs-seg" role="group" aria-label="Settings sections" onKeyDown={onKey}>
             {SETTINGS_SECTIONS.map((s, i) => (
               <button key={s.id} ref={(el) => { tabs.current[i] = el; }} type="button" className="gs-seg-btn" aria-current={s.id === section ? "page" : undefined}
                 onClick={() => { if (s.id !== section) go(s.id); }} data-testid={`settings-section-${s.id}`}>
-                {labelOf(s.id, s.label)}
+                {s.label}
               </button>
             ))}
           </div>

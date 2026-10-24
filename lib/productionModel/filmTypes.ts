@@ -138,18 +138,24 @@ const PLUS = ["+Sound", "+Edit", "+Deliver"];
  * Feature, for later (nothing is built for it yet): its board is grouped by scene, and a representative scene is made
  * before the rest are scaled from it.
  */
+/**
+ * The default's ids that other modules name (the question engine's checklists: lib/productionModel/checklists.ts). They are
+ * written here only, so the default's ids live in this one file (tests/unit/productionSteps.spec.ts holds every other file to it).
+ */
+export const FILM_TYPE_ID = { adFilm: "ad_film", shortFilm: "short_film", musicVideo: "music_video", social: "social" } as const;
+
 export const FILM_TYPES_DEFAULT = {
   filmTypes: [
-    filmType("ad_film", "Ad film", ["Brief", "Script", "Treatment", "Elements", "Look", "Storyboard", "Shots", ...PLUS]),
+    filmType(FILM_TYPE_ID.adFilm, "Ad film", ["Brief", "Script", "Treatment", "Elements", "Look", "Storyboard", "Shots", ...PLUS]),
     filmType("feature", "Feature", ["Brief", "Script", "Treatment", "Elements", "Look", "Storyboard", "Shots", ...PLUS]),
-    filmType("short_film", "Short film", ["Brief", "Script", "Treatment", "Elements", "Look", "Storyboard", "Shots", ...PLUS]),
-    filmType("music_video", "Music video", ["Track", "Beat map", "Treatment", "Elements", "Look", "Storyboard", "Animatic", "Shots", ...PLUS]),
+    filmType(FILM_TYPE_ID.shortFilm, "Short film", ["Brief", "Script", "Treatment", "Elements", "Look", "Storyboard", "Shots", ...PLUS]),
+    filmType(FILM_TYPE_ID.musicVideo, "Music video", ["Track", "Beat map", "Treatment", "Elements", "Look", "Storyboard", "Animatic", "Shots", ...PLUS]),
     filmType("product_video", "Product video", ["Brief", "+Treatment", "Product", "Look", "Storyboard", "Shots", ...PLUS]),
     filmType("ugc", "UGC", ["Brief", "Creator", "Hook", "Script", "+Treatment", "Shots", "Captions", "Deliver"]),
     filmType("microdrama", "Microdrama", ["Series bible", "+Treatment", "Episodes", "Elements", "Storyboard", "Shots", ...PLUS]),
     filmType("pre_vis", "Pre-vis", ["Brief", "Script", "+Treatment", "Set map", "Elements", "Storyboard", "Animatic", "Shots", "Handoff"]),
     filmType("trend_clip", "Trend clip", ["Source", "+Treatment", "Format breakdown", "Swap-ins", "Copy", "Shots", "Captions", "Deliver"]),
-    filmType("social", "Social", ["Deliverables", "+Treatment", "Hook", "Copy", "Design", "Visuals", "Captions", "Deliver"]),
+    filmType(FILM_TYPE_ID.social, "Social", ["Deliverables", "+Treatment", "Hook", "Copy", "Design", "Visuals", "Captions", "Deliver"]),
   ],
 } satisfies z.input<typeof filmTypeConfigSchema>;
 

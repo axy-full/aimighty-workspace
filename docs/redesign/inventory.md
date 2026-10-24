@@ -1,6 +1,8 @@
 <!-- Research for the redesign build, 10 Oct 2026: read-only reading of design/particl-prototype-12 (line refs L… are to "Particl prototype.dc.html"). Facts, not decisions: docs/redesign-plan.md decides. -->
 # Particl prototype v12: build inventory
 
+> 23 Oct 2026: design/particl-prototype-12 and the build made from it are deleted (owner, 23 Oct, 14:35; docs/old-shells.md › "The prototype-12 build deleted"). This inventory is history; design/particl-v31.16 is the only design.
+
 Source: `/home/agent/design-inbox/proto12/particl-prototype-12/` (README.txt, CHANGES.txt, `Particl prototype.dc.html`, `Prototype v12 screens.dc.html`, support.js). I read it as text only; nothing was executed. Previous design: `design/particl-graphite/` (README.md, PROMPT.md, CHANGES.txt, Gaps A/B READMEs, github.md, *.dc.html).
 
 Conventions:

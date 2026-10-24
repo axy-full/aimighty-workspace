@@ -74,7 +74,7 @@ test("the invitation page asks for the policy before an account is made", () => 
   expect(route).toContain("acceptedPolicy: policyAccepted(body)");
 });
 
-test("the invitation page and the join sheet link the Content policy and the Privacy notice under the tick, to the pages the sign-up page links", () => {
+test("the invitation page links the Content policy and the Privacy notice under the tick, to the pages the sign-up page links", () => {
   const signup = readFileSync("app/(auth)/signup/page.tsx", "utf8");
   const docs = readFileSync("components/AgeConfirm.tsx", "utf8");
   const shared = docs.slice(docs.indexOf("export function AgeConfirmDocs"));
@@ -83,8 +83,6 @@ test("the invitation page and the join sheet link the Content policy and the Pri
     expect(shared).toContain(`href="${href}" target="_blank" rel="noopener">${words}</Link>`);
   }
   expect(shared).toMatch(/className="age-confirm-link"/);
-  const join = readFileSync("components/v12/join/JoinSheet.tsx", "utf8");
-  expect(join).toMatch(/<AgeConfirm name="accept"[^>]*\/>\s*<AgeConfirmDocs /);
   expect(readFileSync("app/(auth)/invite/[code]/page.tsx", "utf8")).toMatch(/<AgeConfirmDocs testId="invite-docs" \/>/);
   /* Readable, 44 px targets, a visible ring (rule 15): the links share the tick's own link style. */
   const css = readFileSync("components/age-confirm.css", "utf8");
@@ -92,3 +90,6 @@ test("the invitation page and the join sheet link the Content policy and the Pri
   expect(css).toMatch(/\.age-confirm-link:focus-visible \{ outline: 2px solid/);
   expect(css).toMatch(/\.age-confirm-docs \{[^}]*font-size: 13px/);
 });
+
+/* Moved here when the prototype-12 build was deleted (23 Oct 2026; docs/old-shells.md): the join sheet (components/v12/join) went with it. */
+test.fixme("the join sheet's age tick carries the Content policy and Privacy notice links (AgeConfirm then AgeConfirmDocs) — no home: the visitor join sheet is deleted; sign-up, invite and setup keep the tick (tests/age-confirm-workbench.spec.ts); owner question: does v31.16 bring a join sheet back?", () => {});

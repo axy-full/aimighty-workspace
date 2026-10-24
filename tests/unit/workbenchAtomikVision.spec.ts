@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { LOW, MEDIUM } from "../helpers/thinkingSlots";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import path from "node:path";
@@ -99,8 +100,11 @@ const model: CatalogModel = {
   contextWindow: 200000,
   maxTokens: 8000,
   inputModalities: ["text", "image"],
-  pricing: { input: 0.0000001, output: 0.0000003 },
+  pricing: { input: 0.000000113, output: 0.000000379 },
 };
+test("the fixture's made-up rates are no catalogue entry's", () => {
+  expect(vendorRatesIn(model.pricing)).toEqual([]);
+});
 async function upload(id: string, mime = "image/png", size = 200) {
   await db().execute({
     sql: `INSERT INTO uploads(id,filename,mime,ext,bytes,sha256,stored_url,kind,duration_s,created_at) VALUES(?,?,?,'png',?,'test',?,?,6,?)`,
