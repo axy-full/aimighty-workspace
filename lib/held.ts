@@ -365,13 +365,14 @@ export async function releaseHeldJobs(opts: { only?: string; approved?: number; 
     const t = now();
     const next = r.kind === "video" ? "queued" : "running";
     // The clock restarts: the janitor measures a take from when it was sent, and it is sent now.
-    /* Who approved it, when a person's press did (above): the author (`created_by`) stays as it is. */
+    /* Who released it, on every person's own press (above), whoever made it and whatever it was held for (owner, 22 Oct 2026); the
+       automatic release names nobody. The author (`created_by`) stays as it is, and the reservation's `approved_by` is only `approvedBy`'s. */
     const upd = await db().execute({
       sql: `UPDATE generations
             SET status = ?, created_at = ?, updated_at = ?, error = NULL,
-                params = json_remove(json_set(params, '$.releasedAt', ?${approvedBy ? ", '$.releasedBy', ?" : ""}), '$.held')
+                params = json_remove(json_set(params, '$.releasedAt', ?${person ? ", '$.releasedBy', ?" : ""}), '$.held')
             WHERE id = ? AND status = 'held'`,
-      args: approvedBy ? [next, t, t, t, approvedBy, r.id] : [next, t, t, t, r.id],
+      args: person ? [next, t, t, t, person, r.id] : [next, t, t, t, r.id],
     });
     if (!upd.rowsAffected) {
       // Discarded between its reservation and its release: nothing may stay reserved for it.

@@ -46,12 +46,14 @@ Always a full run:
    - `tests/signin-retired-workbench.spec.ts`, `tests/r1-port-paid-sends-workbench.spec.ts`, `tests/audit-money-workbench.spec.ts`: the retired sign-in, paid sends, and the money audit
    - `tests/demo-board-everyone-audit-workbench.spec.ts`: the board, with the switch off, is the same for everyone
    - `tests/marketing-site-workbench.spec.ts` and `tests/demo-s15-guest-home-workbench.spec.ts`: the visitor pages
-   - the switch-off test of every new-interface spec that has one (`--grep "switch off" --pass-with-no-tests` over those spec files only): customers see today's app
+   - the switch-off pass (`--grep "switch off" --pass-with-no-tests` over those spec files only): customers see today's app. It runs `tests/switch-off-customers-workbench.spec.ts` when it exists (`GUARDS.switchOff`, the switch-off browser check every build behind the new-interface switch is held to; it stays when a build is deleted, as the prototype-12 build's own switch-off specs were on 23 Oct 2026) plus the switch-off test of every new-interface spec that has one. A spec with no switch-off test is never put in this pass.
    - `tests/customer.spec.ts`: the customer smoke test
    - the five-minute test (`playwright.five-minute.config.ts`): a new person with an invitation reaches an approved first render, on a laptop and a phone
 3. All of it on fresh dev servers in chunks of at most six spec files, each server warmed (`scripts/ci-run-specs.sh`): its routes answered once (`scripts/warm-dev-routes.mjs`), and then, before the first workbench spec of each run, the main screens opened once in a browser by a throwaway person (`tests/workbench.warmup.ts`, the workbench config's global set-up). A cold dev server compiles a screen's client chunks on the first browser visit, and the page rebuilds and reloads while it does; a spec that opens a menu in that window finds the page gone. The walk ends when the server answers `/api/health` quickly five times in a row. `PW_NO_WARMUP=1` skips it on a server that is already warm.
 
 Nothing here removes a test from a spec: a spec that runs, runs whole (except the switch-off pass, which is the switch-off tests by name).
+
+`tests/unit/ci-select.spec.ts` runs these rules on a fixture of the new interface (its specs, components and the files outside it that import from it), not on whatever `components/v12` holds today; `exposedFrom` in `scripts/ci-select.mjs` is the import reading it shares with `exposedV12`, which the plan job runs on the repository.
 
 ## Required checks
 

@@ -64,9 +64,14 @@ const nextConfig: NextConfig = {
   ...(process.env.NEXT_OUTPUT === "standalone" ? { output: "standalone" as const } : {}),
   // Keep framework debugging chrome from covering controls in mock browser rehearsals.
   ...(process.env.ENGINE_MOCK === "1" ? { devIndicators: false as const } : {}),
-  // CI's browser jobs only: Turbopack's source maps double the native memory
-  // each compiled route holds in `next dev` (see verify.yml).
-  ...(process.env.CI_DEV_SOURCE_MAPS === "off" ? { experimental: { turbopackSourceMaps: false } } : {}),
+  experimental: {
+    // Next 16.4's upgrade reminders are off (owner, 23 Oct 2026): under a coding agent, `next dev` and `next build`
+    // read npm's advisory feed and stop on the first reminder. Security upgrades are PRs, reviewed like any other.
+    agentUpgrade: false,
+    // CI's browser jobs only: Turbopack's source maps double the native memory
+    // each compiled route holds in `next dev` (see verify.yml).
+    ...(process.env.CI_DEV_SOURCE_MAPS === "off" ? { turbopackSourceMaps: false } : {}),
+  },
   async headers() {
     // Only the dedicated movie document can create the bundled AAC WASM worker.
     // Every other page retains the policy above; production never enables general eval.
