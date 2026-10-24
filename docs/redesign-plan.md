@@ -169,3 +169,7 @@ The earlier "Owner decisions" sections (10 Oct to 21 Oct) are on `redesign/integ
    - Consent is a tick, not a gate. It records who ticked, when, and a file if one was attached. Nothing refuses to make, train, clone or lip-sync for want of it. Only a person ticks it.
    - Rule 3 covers design files.
    - No vendor rate, model id or model mapping goes into any commit.
+
+## Design notes
+
+- **The film record (step 3c, Amendment (iii) I) [schema]:** tables, checkpoint rule, turn context, acceptance tests and the migration plan are in [film-record-schema.md](film-record-schema.md). Docs only; nothing migrates before the owner's yes.
