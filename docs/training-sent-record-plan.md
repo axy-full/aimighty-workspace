@@ -183,7 +183,7 @@ Kept green without edits: `tests/unit/demo-gaps-l5-consent.spec.ts`, `tests/unit
 4. **No switch;** a revert is the rollback. Yes?
 5. **The Inspector fix in the same PR** (§5: the form is offered by the card's stage, not the bound identity alone; UI only, no money). Yes?
 6. **What happens to the record elsewhere.** It holds ids, a time, and `sent_by` (a person's id). As planned:
-   - **Project delete** leaves it. The identities it points at stay too (the route re-files them, `app/api/projects/[id]/route.ts:177`), and the record is only read beside its identity.
+   - **Project delete** leaves it. The delete never touches `soul_identities`, so the identity each record points at stays too. The route re-files the project's rows in a different table, `identities` (`app/api/projects/[id]/route.ts:182` on `release/1` after M1). The record is only read beside its identity.
    - **Workspace export** leaves it out. It is bookkeeping, as `generation_requests` is, and is not in the export's allowlist (`lib/workspaceExport.ts:48-76`).
    - **Identity purge** runs only inside a workspace purge (`lib/purge.ts:157`), which then removes the whole database (`:207-212`), record included. A purged identity is never listed (`lib/soulIdentities.ts:374`), so its record is never shown.
 
