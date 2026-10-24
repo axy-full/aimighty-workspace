@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { aboutWords, goFigure, makePriceTitle, makePriceWords, makeQuoteValue, shownValue, type MakeShown } from "../../lib/shell/make-price";
+import { aboutWords, goFigure, madeValue, makePriceTitle, makePriceWords, makeQuoteValue, shownDollars, shownValue, type MakeShown } from "../../lib/shell/make-price";
 import { cinemaPriceDollars, cinemaPriceWords } from "../../lib/cinemaHold";
 import { CREDITS_MODE, exact, FREE, modeOf, NO_AT_COST_FIGURE, NO_AT_COST_TITLE, PAYS_AT_COST_TITLE, priceTitle, priceWords, upTo } from "../../lib/shell/price-words";
 
@@ -90,4 +90,26 @@ test("the drawn value only gains the dollars Make already holds: same kind, same
   expect(shownValue({ value: FREE, about: null, usd: 0.5 })).toEqual(FREE);
   expect(shownValue(cinema(31, 0.42))).toBeNull();
   expect(shownValue(null)).toBeNull();
+});
+
+/* The toast after a press (components/graphite/make/use-make.ts › sent): the accepted credits, worded in the dollars Make showed for that figure. */
+test("the toast after a press: the house reads the dollars Make showed for that figure, '—' for one it never showed in dollars", () => {
+  const shown = shownDollars({ credits: 7, usd: 0.5 }, { credits: 21, usd: 1.5 });
+  expect(priceWords(madeValue(7, shown), HOUSE)).toBe("$0.50");
+  expect(priceWords(madeValue(21, shown), HOUSE)).toBe("$1.50");
+  expect(priceWords(madeValue(9, shown), HOUSE)).toBe(NO_AT_COST_FIGURE);
+  /* No dollars shown (a batch re-quoted take by take): "—", as the button read. */
+  expect(priceWords(madeValue(21, shownDollars({ credits: 7, usd: 0.5 }, { credits: 21, usd: null })), HOUSE)).toBe(NO_AT_COST_FIGURE);
+  /* The button's figure wins where both are the same credits (an enhancement the house pays in dollars only). */
+  expect(shownDollars({ credits: 7, usd: 0.5 }, { credits: 7, usd: 0.52 }).get(7)).toBe(0.52);
+});
+
+test("the toast after a press: a workspace that pays in credits reads the credits, whatever dollars were on hand", () => {
+  const shown = shownDollars({ credits: 7, usd: 0.5 }, { credits: 21, usd: 1.5 });
+  for (const credits of [7, 21, 9]) {
+    expect(priceWords(madeValue(credits, shown), CUSTOMER)).toBe(priceWords(exact(credits), CUSTOMER));
+    expect(priceWords(madeValue(credits, shown), CUSTOMER)).not.toContain("$");
+  }
+  expect(priceWords(madeValue(0, new Map()), CUSTOMER)).toBe("free");
+  expect(shownDollars({ credits: null, usd: 0.5 }, { credits: 7, usd: Number.NaN }).size).toBe(0);
 });
