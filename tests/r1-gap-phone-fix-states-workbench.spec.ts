@@ -139,8 +139,16 @@ test("states: with no connection, judging queues and spending says it needs a co
   const sent = await interceptPaid(page);
   await signedInWarm(page);
   const seeded = await seedPhoneStates(page, { kinds: ["review"] });
+  /* The offline card shows the seeded take, which reaches the screen through the project's two library reads. A read
+     still in flight when the connection drops is cut off and the card has nothing to show, so both land first. */
+  const library = (source: string) => page.waitForResponse((r) => {
+    const url = new URL(r.url());
+    return url.pathname === "/api/workbench/library" && url.searchParams.get("projectId") === seeded.project.id && url.searchParams.get("source") === source && r.ok();
+  });
+  const reads = Promise.all([library("uploads"), library("generations")]);
   await page.goto(`/suites?project=${seeded.project.id}&screen=states${framed(info)}`);
   await expect(page.getByTestId("phone-states")).toBeVisible();
+  await Promise.all((await reads).map((r) => r.finished()));
   await context.setOffline(true);
   const offline = page.getByTestId("phone-state-offline");
   await expect(offline).toBeVisible();
