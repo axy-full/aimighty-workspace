@@ -90,8 +90,8 @@ test("the starter's fallback clip carries its credit on Home's card, the board's
 test("the review page carries the credit under the sample clip's take only, with phone-sized links and no sideways scroll", async ({ page }, info) => {
   const token = "c".repeat(40);
   const clip = readFileSync(path.resolve("tests/fixtures/astra-source.mp4"));
-  const take = (id: string, credit: boolean) => ({ id, kind: "video", shot: "SH010", title: `Take ${id}`, version: 1, prompt: "A boat.", approvedBy: null, media: `/api/review/${token}/media/${id}`, notes: [], ...(credit ? { credit: true } : {}) });
-  await page.route(`**/api/review/${token}`, (route) => route.fulfill({ json: { workspace: { name: "Studio", logo: null }, production: { name: "Coast Road", description: "" }, takes: [take("gen_clip", true), take("gen_other", false)], expiresAt: Date.UTC(2026, 11, 1) } }));
+  const take = (id: string, credit: boolean) => ({ id, kind: "video", shot: "SH010", title: `Take ${id}`, version: 1, media: `/api/review/${token}/media/${id}`, notes: [], ...(credit ? { credit: true } : {}) });
+  await page.route(`**/api/review/${token}`, (route) => route.fulfill({ json: { workspace: { name: "Studio", logo: null }, production: { name: "Coast Road" }, takes: [take("gen_clip", true), take("gen_other", false)], expiresAt: Date.UTC(2026, 11, 1) } }));
   await page.route(`**/api/review/${token}/media/**`, (route) => route.fulfill({ status: 200, contentType: "video/mp4", body: clip }));
   await page.goto(`/review/${token}`);
   await expect(page.getByRole("heading", { name: "Coast Road" })).toBeVisible();

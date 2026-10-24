@@ -12,11 +12,11 @@ import { ClientReview, type ClientReviewData } from "@/components/graphite/secur
  * A production's Approved takes, in shot order, under the studio's own
  * name and mark — no login, no app chrome, and nothing of the platform's
  * branding in front of someone else's client. A comment goes back to the
- * take's notes, where the team reads it beside their own.
+ * take, where the team reads it; the page shows this link's comments only.
  */
 type Note = { text: string; author: string; guest: boolean; at: number };
-type Take = { id: string; kind: "video" | "image" | "audio" | "model"; shot: string | null; title: string | null; version: number; prompt: string; approvedBy: string | null; media: string; notes: Note[]; credit?: { title: string; licence: string; licenceUrl: string; sourceUrl: string } };
-type Review = { workspace: { name: string; logo: string | null }; production: { name: string; description: string }; takes: Take[]; expiresAt: number };
+type Take = { id: string; kind: "video" | "image" | "audio" | "model"; shot: string | null; title: string | null; version: number; media: string; notes: Note[]; credit?: { title: string; licence: string; licenceUrl: string; sourceUrl: string } };
+type Review = { workspace: { name: string; logo: string | null }; production: { name: string }; takes: Take[]; expiresAt: number };
 
 export default function ReviewPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
@@ -56,7 +56,7 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
           : <span className="rv-name">{approved.workspace.name}</span>}
         <div className="rv-title">
           <h1>{approved.production.name}</h1>
-          <p>{approved.takes.length} approved take{approved.takes.length === 1 ? "" : "s"}{approved.production.description ? ` · ${approved.production.description}` : ""}</p>
+          <p>{approved.takes.length} approved take{approved.takes.length === 1 ? "" : "s"}</p>
         </div>
       </header>
 
@@ -80,7 +80,6 @@ export default function ReviewPage({ params }: { params: Promise<{ token: string
             </div>
             <div className="rv-body">
               <h2>{t.shot ? `${t.shot} · v${t.version}` : `v${t.version}`}{t.title ? ` — ${t.title}` : ""}</h2>
-              <p className="rv-prompt">{t.prompt}</p>
               {t.credit ? <SampleClipCreditLine /> : null}
               {t.notes.length > 0 && (
                 <ul className="rv-notes">
