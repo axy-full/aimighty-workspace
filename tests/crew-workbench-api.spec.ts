@@ -99,7 +99,14 @@ test("a room quotes first, streams propose → challenge → converge, settles o
     const settled = await events();
     expect(settled).toHaveLength(1);
     expect(settled[0]).toMatchObject({ status: "succeeded", engine: "xai" });
-    expect(String(settled[0].model ?? "")).not.toBe("");
+    /* The room's model is no longer sent to the page: read it from the room's own row, and the meter line is on exactly that model. */
+    const tenantRow = (await platform.execute({ sql: "SELECT db_url FROM workspaces WHERE id=?", args: [account.workspace.id] })).rows[0];
+    const tenant = createClient({ url: String(tenantRow.db_url), timeout: 10_000 });
+    try {
+      const roomModel = String((await tenant.execute({ sql: "SELECT model FROM crew_sessions WHERE id=?", args: [session.id] })).rows[0]?.model ?? "");
+      expect(roomModel).not.toBe("");
+      expect(settled[0].model).toBe(roomModel);
+    } finally { tenant.close(); }
     expect(Number(settled[0].credits)).toBe(Number(done.spendCr));
     /* The round number is the request's key: round 1 sent again (a second press, or the request arriving late) runs nothing. */
     const again = await request.post(rounds, { headers, data: { maxCredits: quote.estimateCredits + 50, round: 1 } });

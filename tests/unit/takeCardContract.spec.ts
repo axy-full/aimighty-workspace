@@ -16,7 +16,7 @@ function gen(id: string, extra: Partial<Generation> = {}): Generation {
   return {
     id, projectId: "p", projectName: null, arkTaskId: null, kind: "image", reviewState: "", reviewBy: null, pickedBy: null, pickedAt: null,
     approvedBy: null, approvedAt: null, model: "gemini-3.1-flash-image", prompt: "A prompt", title: null, params: {}, status: "succeeded",
-    sourceUrl: null, storedUrl: "/api/media/" + id, totalTokens: null, costUsd: null, creditsBilled: 1, refineCostUsd: null, refineModel: null,
+    sourceUrl: null, storedUrl: "/api/media/" + id, totalTokens: null, costUsd: null, creditsBilled: 1, refineCostUsd: null, refined: false,
     refineInTokens: null, refineOutTokens: null, error: null, createdBy: "u", authorName: null, shotId: null, shotCode: null, shotScene: null,
     shotTitle: null, version: 1, durationMs: null, durationS: null, provider: "mock", attempts: 1, task: "generate", sourceGenId: null,
     createdAt: 10, updatedAt: 10, ...extra,

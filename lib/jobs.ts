@@ -84,9 +84,10 @@ export type Generation = {
   /** Credits — only for a workspace that pays in them. Never both. */
   creditsBilled: number | null;
   providerCreditQuote?: ProviderCreditQuote | null;
-  /** What the prompt writer charged for this render, and who it was. */
+  /** What the prompt writer charged for this render, and whether it wrote the prompt: never its model (Amendment (iii) §E; owner, 24 Oct 2026,
+   *  item 14 (b)). The row keeps refine_model. */
   refineCostUsd: number | null;
-  refineModel: string | null;
+  refined: boolean;
   refineInTokens: number | null;
   refineOutTokens: number | null;
   error: string | null;
@@ -258,7 +259,7 @@ export function rowToGeneration(r: any): Generation {
     creditsBilled: inCredits && !providerCreditQuote
       ? Number(r.receipt_credits ?? 0)
       : null,
-    refineModel: r.refine_model ?? null,
+    refined: r.refine_model != null && r.refine_model !== "",
     refineInTokens: r.refine_in_tokens == null ? null : Number(r.refine_in_tokens),
     refineOutTokens: r.refine_out_tokens == null ? null : Number(r.refine_out_tokens),
     error: r.provider_outcome != null && (inCredits || outcome?.funding !== "own")

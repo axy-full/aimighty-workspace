@@ -239,7 +239,7 @@ test("a take failed: Nothing billed only where the provider's outcome says so; t
     id: "gen_l4failed", projectId: seeded.productionId, projectName: "A 15-second film", arkTaskId: null, kind: "video", reviewState: "", reviewBy: null, pickedBy: null, pickedAt: null,
     approvedBy: null, approvedAt: null, model: SEED, prompt: "Shot 2: a quiet wide frame.", title: null,
     params: { ratio: "16:9", resolution: "1080p", duration: 5, references: [] }, status: "failed", sourceUrl: null, storedUrl: null, totalTokens: null,
-    costUsd: null, creditsBilled: null, refineCostUsd: null, refineModel: null, refineInTokens: null, refineOutTokens: null, error: "The engine did not return a take.",
+    costUsd: null, creditsBilled: null, refineCostUsd: null, refined: false, refineInTokens: null, refineOutTokens: null, error: "The engine did not return a take.",
     failure: { provider: "byteplus", stage: null, code: "provider_error", kind: "provider_error", message: "The engine did not return a take.", billing: { state: "not_charged", basis: "ark-success-only" }, payer: "platform", charge: { credits: 0, settled: true } },
     createdBy: seeded.me, authorName: "Failed Tester", shotId: seeded.shotIds[1], shotCode: null, shotScene: null, shotTitle: "Shot 2", version: 1, durationMs: null, durationS: null,
     provider: "byteplus", attempts: 1, task: "generate", sourceGenId: null, createdAt: Date.now() - 60_000, updatedAt: Date.now() - 30_000, settledAt: Date.now() - 30_000,

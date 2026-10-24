@@ -10,7 +10,7 @@ const SHA = "a".repeat(64);
 function gen(id: string, extra: Partial<Generation> = {}): LibraryAsset {
   const value = { id, projectId: "p", projectName: null, arkTaskId: null, kind: "video", reviewState: "", reviewBy: null, pickedBy: null, pickedAt: null,
     approvedBy: null, approvedAt: null, model: "dreamina-seedance-2-5-260628", prompt: "A prompt", title: null, params: { duration: 5 }, status: "succeeded",
-    sourceUrl: null, storedUrl: "/api/media/" + id, totalTokens: null, costUsd: null, creditsBilled: 18, refineCostUsd: null, refineModel: null,
+    sourceUrl: null, storedUrl: "/api/media/" + id, totalTokens: null, costUsd: null, creditsBilled: 18, refineCostUsd: null, refined: false,
     refineInTokens: null, refineOutTokens: null, error: null, createdBy: "u", authorName: null, shotId: null, shotCode: null, shotScene: null,
     shotTitle: null, version: 1, durationMs: null, durationS: null, provider: "byteplus", attempts: 1, task: "generate", sourceGenId: null,
     createdAt: 10, updatedAt: 10, ...extra } as Generation;

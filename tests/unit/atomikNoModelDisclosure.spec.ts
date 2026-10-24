@@ -650,9 +650,11 @@ test("Crew: the engine's status and Verify, the roster, a room, its quotes, a ro
 /*
  * The prompt writer (owner, 24 Oct 2026, item 14 (b)): its model reached members in five places, /api/engines (refiner), /api/platform
  * (promptWriter), /api/prompt/enhance (writer, and the quote's model), /api/usage (refineModel, refineLabel, and the per-writer rows), and the
- * export's generations.refine_model. None of them sends it now; the stored columns keep it. Every candidate id is read at run time.
+ * export's generations.refine_model; and a sixth, every take as lib/jobs.ts rowToGeneration reads it (refineModel), which /api/jobs,
+ * /api/jobs/[id], the media and tray reads and the MCP tools all send. None of them sends it now; the stored columns keep it. Every
+ * candidate id is read at run time.
  */
-test("the prompt writer's model reaches no member: the engines read, the platform read, an enhancement's quote and answer, the usage read and the export", async () => {
+test("the prompt writer's model reaches no member: the engines read, the platform read, an enhancement's quote and answer, the usage read, the takes and the export", async () => {
   const { activeWriter, CLAUDE_MODEL, TEXT_MODEL } = await import("../../lib/enhance");
   const { HOUSE_WORKSPACE_ID } = await import("../../lib/houseWorkspace");
   const { db, ready } = await import("../../lib/db");
@@ -702,6 +704,9 @@ test("the prompt writer's model reaches no member: the engines read, the platfor
   /* The usage read with its per-take lines (the house workspace reads in dollars) and the export: a take whose prompt the writer wrote. */
   const house = { ...workspace("house"), id: HOUSE_WORKSPACE_ID, slug: HOUSE_WORKSPACE_ID, dbUrl: `file:${path.join(dir, `house-${randomUUID().slice(0, 8)}.db`)}` };
   const usage = await route("app/api/usage/route.ts");
+  const jobs = await route("app/api/jobs/route.ts");
+  const job = await route("app/api/jobs/[id]/route.ts");
+  const { rowToGeneration } = await import("../../lib/jobs");
   await inTenant(house, async () => {
     await ready();
     const engine = MODELS.find((m) => m.kind === "video")!.id;
@@ -718,6 +723,25 @@ test("the prompt writer's model reaches no member: the engines read, the platfor
     for (const row of read.body.refines as Record<string, unknown>[]) { expect(row).not.toHaveProperty("model"); expect(row).not.toHaveProperty("label"); }
     expect(Number(read.body.promptCount)).toBe(writers.size);
     noWriter("GET /api/usage", read.body);
+    /* The takes: the list and one take, as every take is read (rowToGeneration), say only whether the writer wrote the prompt. */
+    const listed = await answer(await jobs.GET!(new Request("https://particl.test/api/jobs")));
+    expect(listed.status, JSON.stringify(listed.body).slice(0, 300)).toBe(200);
+    const shown = listed.body.generations as Record<string, unknown>[];
+    expect(shown.length).toBe(writers.size);
+    for (const take of shown) { expect(take, String(take.id)).not.toHaveProperty("refineModel"); expect(take.refined, String(take.id)).toBe(true); }
+    noWriter("GET /api/jobs", listed.body);
+    for (const take of shown) {
+      const one = await answer(await job.GET!(new Request(`https://particl.test/api/jobs/${take.id}?sync=0`), { params: Promise.resolve({ id: String(take.id) }) }));
+      expect(one.status, JSON.stringify(one.body).slice(0, 300)).toBe(200);
+      expect((one.body.generation as Record<string, unknown>).refined).toBe(true);
+      noWriter("GET /api/jobs/[id]", one.body);
+    }
+    for (const row of (await db().execute("SELECT * FROM generations")).rows) {
+      const read = rowToGeneration(row);
+      expect(read).not.toHaveProperty("refineModel");
+      expect(read.refined).toBe(true);
+      noWriter("rowToGeneration", read);
+    }
     const exported = await workspaceExport(person.id, person.email) as unknown as { contents?: Record<string, Record<string, unknown>[]> } & Record<string, unknown>;
     const takes = (exported.contents ?? (exported as unknown as Record<string, Record<string, unknown>[]>)).generations;
     expect(takes.length).toBe(writers.size);

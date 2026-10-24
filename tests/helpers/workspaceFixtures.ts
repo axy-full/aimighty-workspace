@@ -23,7 +23,7 @@ export function generation(fields: Partial<Generation> & { id: string }): Genera
     pickedBy: null, pickedAt: null, approvedBy: null, approvedAt: null, model: "gemini-3.1-flash-image",
     prompt: "", title: null, params: {}, status: "succeeded", sourceUrl: null, storedUrl: `/api/media/${fields.id}`,
     totalTokens: null, costUsd: null, creditsBilled: null, providerCreditQuote: null, refineCostUsd: null,
-    refineModel: null, refineInTokens: null, refineOutTokens: null, error: null, createdBy: "u", authorName: null,
+    refined: false, refineInTokens: null, refineOutTokens: null, error: null, createdBy: "u", authorName: null,
     shotId: null, shotCode: null, shotScene: null, shotTitle: null, version: 1, durationMs: null, durationS: null,
     provider: "mock", attempts: 1, task: "generate", sourceGenId: null, createdAt, updatedAt: createdAt,
     ...fields,

@@ -488,7 +488,7 @@ test("a take held for credits is its own state: Held · needs N cr, its price, a
   const gen = (id: string, fields: Record<string, unknown>) => ({ origin: "generation" as const, value: {
     id, projectId: "p", projectName: null, arkTaskId: null, kind: "video", reviewState: "", reviewBy: null, pickedBy: null, pickedAt: null,
     approvedBy: null, approvedAt: null, model: "dreamina-seedance-2-0-260128", prompt: "", title: id, params: {}, status: "succeeded", sourceUrl: null,
-    storedUrl: null, totalTokens: null, costUsd: null, creditsBilled: null, providerCreditQuote: null, refineCostUsd: null, refineModel: null,
+    storedUrl: null, totalTokens: null, costUsd: null, creditsBilled: null, providerCreditQuote: null, refineCostUsd: null, refined: false,
     refineInTokens: null, refineOutTokens: null, error: null, createdBy: "u", authorName: null, shotId: null, shotCode: null, shotScene: null,
     shotTitle: null, version: 1, durationMs: null, durationS: null, provider: "byteplus", attempts: 1, task: "generate", sourceGenId: null,
     createdAt: 1, updatedAt: 1, ...fields,

@@ -39,9 +39,9 @@ export type Gen = {
    *  vendor's dollars are not that unit. */
   creditsBilled?: number | null;
   providerCreditQuote?: ProviderCreditQuote | null;
-  /** The prompt writer's share, and who wrote it. */
+  /** The prompt writer's share, and whether it wrote the prompt (never its model). */
   refineCostUsd?: number | null;
-  refineModel?: string | null;
+  refined?: boolean;
   refineInTokens?: number | null;
   refineOutTokens?: number | null;
   error: string | null;
@@ -175,7 +175,7 @@ export default function GenCard({
         {p.resolution && <span>· {String(p.resolution).toUpperCase()}</span>}
         {(gen.providerCreditQuote || gen.costUsd != null || gen.creditsBilled != null) && (
           <span className="font-medium text-dim"
-            title={gen.refineModel
+            title={gen.refined
               ? `${money.take(gen)} all-in, prompt writing included`
               : `${money.take(gen)} · prompt as written`}>
             · {money.take(gen)}

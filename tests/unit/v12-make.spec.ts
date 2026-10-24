@@ -15,7 +15,7 @@ const gen = (fields: Partial<Generation> & { id: string }): Generation => ({
   projectId: null, projectName: null, arkTaskId: null, kind: "image", reviewState: "", reviewBy: null, pickedBy: null, pickedAt: null,
   approvedBy: null, approvedAt: null, model: "gemini-3.1-flash-image", prompt: "A lighthouse at dusk No lettering.", title: null,
   params: { ratio: "16:9", rawPrompt: "A lighthouse at dusk" }, status: "succeeded", sourceUrl: null, storedUrl: `/api/media/${fields.id}`, totalTokens: null,
-  costUsd: null, refineCostUsd: null, providerCreditQuote: null, creditsBilled: 2, refineModel: null, refineInTokens: null, refineOutTokens: null,
+  costUsd: null, refineCostUsd: null, providerCreditQuote: null, creditsBilled: 2, refined: false, refineInTokens: null, refineOutTokens: null,
   error: null, failure: null, createdBy: "me", authorName: null, shotId: null, shotCode: null, shotScene: null, shotTitle: null, version: 1,
   durationMs: null, durationS: null, provider: "google", attempts: 1, task: "generate", sourceGenId: null, createdAt: T0, updatedAt: T0,
   ...fields,

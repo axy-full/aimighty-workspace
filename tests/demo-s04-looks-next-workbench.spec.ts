@@ -40,7 +40,7 @@ const take = (id: string, shotId: string, over: Record<string, unknown> = {}): G
   id, projectId: null, projectName: null, arkTaskId: null, kind: "video", reviewState: "approved", reviewBy: "Tester", pickedBy: null, pickedAt: null,
   approvedBy: "Tester", approvedAt: Date.now() - 500_000, model: "dreamina-seedance-2-5-260628", prompt: `Take ${id}`, title: `Take ${id}`,
   params: { duration: 5, resolution: "1080p" }, status: "succeeded", sourceUrl: null, storedUrl: `/api/media/${id}`, totalTokens: null, costUsd: null,
-  creditsBilled: 43, refineCostUsd: null, refineModel: null, refineInTokens: null, refineOutTokens: null, error: null, failure: null, createdBy: "someone",
+  creditsBilled: 43, refineCostUsd: null, refined: false, refineInTokens: null, refineOutTokens: null, error: null, failure: null, createdBy: "someone",
   authorName: "Tester", shotId, shotCode: null, shotScene: null, shotTitle: null, version: 1, durationMs: 20_000, durationS: 5, provider: "ark", attempts: 1,
   task: "generate", sourceGenId: null, createdAt: Date.now() - 600_000, updatedAt: Date.now() - 600_000, ...over,
 });

@@ -40,7 +40,7 @@ export const take = (id: string, shotId: string, over: Record<string, unknown> =
   id, projectId: null, projectName: null, arkTaskId: null, kind: "image", reviewState: "", reviewBy: null, pickedBy: null, pickedAt: null,
   approvedBy: null, approvedAt: null, model: "gemini-3-pro-image", prompt: `Frame for ${id}`, title: `Take ${id}`, params: { resolution: "1K" },
   status: "succeeded", sourceUrl: null, storedUrl: `/api/media/${id}`, totalTokens: null, costUsd: null, creditsBilled: 3, refineCostUsd: null,
-  refineModel: null, refineInTokens: null, refineOutTokens: null, error: null, failure: null, createdBy: "someone", authorName: "Tester",
+  refined: false, refineInTokens: null, refineOutTokens: null, error: null, failure: null, createdBy: "someone", authorName: "Tester",
   shotId, shotCode: null, shotScene: null, shotTitle: null, version: 1, durationMs: 20_000, durationS: null, provider: "google", attempts: 1,
   task: "generate", sourceGenId: null, createdAt: Date.now() - 600_000, updatedAt: Date.now() - 600_000, ...over,
 });

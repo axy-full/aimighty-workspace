@@ -17,7 +17,7 @@ export function gen(over: Partial<Generation> = {}): Generation {
     reviewState: "", reviewBy: null, pickedBy: null, pickedAt: null, approvedBy: null, approvedAt: null,
     model: SEEDANCE, prompt: "A wide shot of the plate", title: null, params: { duration: 5, resolution: "1080p" },
     status: "succeeded", sourceUrl: null, storedUrl: `/stored/${id}.mp4`, totalTokens: null, costUsd: null, creditsBilled: 43,
-    refineCostUsd: null, refineModel: null, refineInTokens: null, refineOutTokens: null, error: null, failure: null,
+    refineCostUsd: null, refined: false, refineInTokens: null, refineOutTokens: null, error: null, failure: null,
     createdBy: "u1", authorName: "Person One", shotId: null, shotCode: null, shotScene: null, shotTitle: null,
     version: 1, durationMs: null, durationS: 5, provider: "ark", attempts: 1, task: "generate", sourceGenId: null,
     createdAt: 1_000_000, updatedAt: 1_000_000,
