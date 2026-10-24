@@ -41,7 +41,7 @@ import type {
  *   limit, answer 5); then the workspace's own default (`WorkspaceDefaults`, answer 7; never on a person-only row); then the
  *   platform's (the checklist's ★: Hindi for language, No limit for the spend limit). "Decide for me" takes the same chain, less
  *   what Atomik may not pick, where Atomik gives no pick. House over workspace over platform (answer 7): the spec orders the
- *   workspace over the platform (SOW §4 Setup: platform → workspace → production → shot) and is silent on house against
+ *   workspace over the platform (SOW §2.3, Setup: platform → workspace → project → shot) and is silent on house against
  *   workspace, so the owner's order stands.
  *
  * "Decide for me" (G; owner, 24 Oct 2026, answers 3 and 6) closes every open row at this step, floor and above the floor, each then
