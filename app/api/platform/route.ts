@@ -3,7 +3,7 @@ import { requireUser, withTenant } from "@/lib/auth";
 import { PROVIDERS, providerConfigured, providerBaseUrl } from "@/lib/providers";
 import { MODELS } from "@/lib/models";
 import { allSettings } from "@/lib/settings";
-import { refineProvider, CLAUDE_MODEL, TEXT_MODEL } from "@/lib/enhance";
+import { refineProvider } from "@/lib/enhance";
 import { usingBlob } from "@/lib/storage";
 import { IMAGE_LIMITS } from "@/lib/imagemeta";
 import { vendorKey } from "@/lib/vendorKeys";
@@ -46,9 +46,9 @@ export const GET = withTenant(async function GET() {
         id: m.id, label: m.label, kind: m.kind,
       })),
     })),
+    /* The prompt writer's route and whether it is connected: never its model (Amendment (iii) §E; owner, 24 Oct 2026, item 14 (b)). */
     promptWriter: {
       provider: refineProvider(),
-      model: refineProvider() === "anthropic" ? CLAUDE_MODEL() : TEXT_MODEL(),
       configured: refineProvider() === "anthropic"
         ? Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN)
         : Boolean(vendorKey("ark")),

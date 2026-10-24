@@ -38,8 +38,10 @@ test("enhance quotes first, charges once at the approved price, and refuses raw:
     /* The quote is read-only and carries credits, not dollars, for a credit workspace. */
     const quoted = await ask({ prompt, mode: "video", quoteOnly: true });
     expect(quoted.ok(), await quoted.text()).toBe(true);
-    const quote = await quoted.json() as { model: string; estimateCredits: number; estimateUsd?: number };
+    const quote = await quoted.json() as { estimateCredits: number; estimateUsd?: number };
     expect(quote.estimateCredits).toBeGreaterThanOrEqual(1);
+    /* The price only: never the writer's model (Amendment (iii) §E; owner, 24 Oct 2026, item 14 (b)). */
+    expect(quote).not.toHaveProperty("model");
     expect(quote.estimateUsd).toBeUndefined();
     expect(await events()).toHaveLength(0);
 
@@ -54,9 +56,9 @@ test("enhance quotes first, charges once at the approved price, and refuses raw:
     const key = `enhance-${randomUUID()}`;
     const ran = await ask({ prompt, mode: "video", maxCredits: quote.estimateCredits }, { "Idempotency-Key": key });
     expect(ran.ok(), await ran.text()).toBe(true);
-    const result = await ran.json() as { prompt: string; provider: string; writer: string };
+    const result = await ran.json() as { prompt: string; provider: string };
     expect(result.provider).toBe("higgsfield");
-    expect(result.writer).toBe(quote.model);
+    expect(result).not.toHaveProperty("writer");
     expect(result.prompt).toContain("@Image1");
     const settled = await events();
     expect(settled).toHaveLength(1);
@@ -69,10 +71,19 @@ test("enhance quotes first, charges once at the approved price, and refuses raw:
     expect(await replay.json()).toEqual(result);
     expect(await events()).toHaveLength(1);
 
-    /* A named provider is honoured and never becomes another one. */
+    /* A named provider is honoured and never becomes another one: the run on it settles on that family's writer (the meter, the platform's
+       record), while the answer names only the enhancer chosen. */
     const claude = await ask({ prompt, mode: "image", provider: "claude", quoteOnly: true });
     expect(claude.ok(), await claude.text()).toBe(true);
-    expect((await claude.json()).model).toMatch(/^anthropic\//);
+    const claudeQuote = await claude.json() as { estimateCredits: number };
+    expect(claudeQuote).not.toHaveProperty("model");
+    const onClaude = await ask({ prompt, mode: "image", provider: "claude", maxCredits: claudeQuote.estimateCredits }, { "Idempotency-Key": `enhance-${randomUUID()}` });
+    expect(onClaude.ok(), await onClaude.text()).toBe(true);
+    expect(await onClaude.json()).toMatchObject({ provider: "claude" });
+    const fresh = (await events()).filter((row) => row.id !== settled[0].id);
+    expect(fresh).toHaveLength(1);
+    const ranOn = (await platform.execute({ sql: "SELECT model FROM meter_events WHERE id=?", args: [fresh[0].id] })).rows[0];
+    expect(String(ranOn.model)).toMatch(/^anthropic\//);
   } finally {
     platform.close();
     await anonymous.dispose();

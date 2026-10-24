@@ -30,9 +30,10 @@ export const GET = withTenant(async function GET() {
     /* What is left on the gateway, when the writer runs through it. */
     gatewayCredits: credits,
     /* Who writes the prompts too thin to film — the workspace's choice on
-       Settings › Prompt, resolved to what this deployment can reach. */
+       Settings › Prompt, resolved to what this deployment can reach — as the choice and whether it is reachable: never the writer's model, its
+       name or its route (Amendment (iii) §E; owner, 24 Oct 2026, item 14 (b)). The server keeps the model for the call and its price. */
     /* And what one of its calls costs at list price — a typical idea, the house style along — so the button can say it. */
-    refiner: { ...writer, automatic: !creditWorkspace,
+    refiner: { writer: writer.writer, configured: writer.configured, automatic: !creditWorkspace,
       pricePerCall: creditWorkspace ? null : writer.writer === "none" ? 0 : estimateRefineUsd(writer.model, 60, 1500) },
     engines: PROVIDERS.map((p) => ({
       id: p.id,

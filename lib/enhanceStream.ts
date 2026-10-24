@@ -3,7 +3,7 @@ import { PaidTextError } from "./paidText";
 
 /**
  * The enhancer's answer, word by word (the owner, 16 Oct 2026): one JSON line per word, `{"t":"word "}`, paced to finish inside about a second, then the
- * settlement, then `{"done":true,"prompt","provider","writer"}`. The workspace is charged only once the last word is out (`finish`). A reader that goes away
+ * settlement, then `{"done":true,"prompt","provider"}` (never the writer's model: Amendment (iii) §E). The workspace is charged only once the last word is out (`finish`). A reader that goes away
  * while the words are still going out (Cancel, a dropped connection: the stream is cancelled, or the request's own signal ends) abandons the answer: failed
  * at zero, never charged, and the claim replays that. The claim is ended here, not from the body (lib/generationRequests.ts CLAIM_DEFERRED_HEADER).
  *
@@ -19,7 +19,7 @@ import { PaidTextError } from "./paidText";
  * (lib/tenant.ts): settling there would find no workspace and the job would stay held until the cron. So everything the stream does runs back inside the
  * scope it was made in, as lib/zip.ts does.
  */
-export type EnhanceAnswer = { prompt: string; provider: string; writer: string };
+export type EnhanceAnswer = { prompt: string; provider: string };
 export function enhanceStream(o: {
   answer: EnhanceAnswer;
   finish: () => Promise<unknown>;

@@ -187,8 +187,12 @@ export async function quotePaidText(input: QuotedTextInput, override?: CatalogMo
   const compiled = await compilePaidText(input, override, true);
   return { model: compiled.model.id, effort: input.effort ?? "auto", estimateCredits: compiled.estimateCredits, estimateUsd: compiled.estimate };
 }
+/** A text job's quote as a member is sent it (the prompt writer's): its price, never the model or effort it was quoted at (Amendment (iii) §E;
+ *  owner, 24 Oct 2026, item 14 (b)). */
 export function paidTextQuoteResponse(quote: PaidTextQuote): Response {
-  return Response.json(atomikPublicResponse(quote, creditsApply(currentTenant()?.workspace)), { headers: { "Cache-Control": "no-store" } });
+  const { model: _model, effort: _effort, ...shown } = quote;
+  void _model; void _effort;
+  return Response.json(atomikPublicResponse(shown satisfies PaidTextQuoteShown, creditsApply(currentTenant()?.workspace)), { headers: { "Cache-Control": "no-store" } });
 }
 /**
  * An Atomik quote as a member is sent it: the price, and for a planning turn the Thinking level it was quoted at (High · Medium · Low,

@@ -647,6 +647,87 @@ test("Crew: the engine's status and Verify, the roster, a room, its quotes, a ro
   }
 });
 
+/*
+ * The prompt writer (owner, 24 Oct 2026, item 14 (b)): its model reached members in five places, /api/engines (refiner), /api/platform
+ * (promptWriter), /api/prompt/enhance (writer, and the quote's model), /api/usage (refineModel, refineLabel, and the per-writer rows), and the
+ * export's generations.refine_model. None of them sends it now; the stored columns keep it. Every candidate id is read at run time.
+ */
+test("the prompt writer's model reaches no member: the engines read, the platform read, an enhancement's quote and answer, the usage read and the export", async () => {
+  const { activeWriter, CLAUDE_MODEL, TEXT_MODEL } = await import("../../lib/enhance");
+  const { HOUSE_WORKSPACE_ID } = await import("../../lib/houseWorkspace");
+  const { db, ready } = await import("../../lib/db");
+  const { workspaceExport } = await import("../../lib/workspaceExport");
+  const writers = new Set<string>([CLAUDE_MODEL(), TEXT_MODEL()].filter(Boolean));
+  const noWriter = (label: string, body: unknown) => {
+    seen.push(label);
+    const text = typeof body === "string" ? body : JSON.stringify(body);
+    expect(thinkingModelNames(text), `${label}: ${text.slice(0, 400)}`).toEqual([]);
+    for (const id of writers) expect(text, `${label}: ${id}`).not.toContain(id);
+  };
+  const ws = await funded("writer");
+  const engines = await route("app/api/engines/route.ts");
+  const platform = await route("app/api/platform/route.ts");
+  const enhance = await route("app/api/prompt/enhance/route.ts", { "@/lib/language-provider": { ...(await import("../../lib/language-provider")), languageReachable: () => true } });
+  await inTenant(ws, async () => {
+    const writer = await activeWriter();
+    if (writer.model) writers.add(writer.model);
+    expect(writers.size).toBeGreaterThan(0);
+    /* What the engines read held: the writer's model, its name and its route. It sends the choice and whether it is connected. */
+    const listed = await answer(await engines.GET!(new Request("https://particl.test/api/engines")));
+    expect(listed.status).toBe(200);
+    expect(Object.keys(listed.body.refiner as object).sort()).toEqual(["automatic", "configured", "pricePerCall", "writer"]);
+    noWriter("GET /api/engines", listed.body);
+    const facts = await answer(await platform.GET!(new Request("https://particl.test/api/platform")));
+    expect(facts.status).toBe(200);
+    expect(facts.body.promptWriter).not.toHaveProperty("model");
+    noWriter("GET /api/platform", facts.body);
+
+    /* An enhancement: its quote (the price only), and the approved run's answer (the prompt and the enhancer chosen). */
+    const ask = { prompt: "A lighthouse at dusk, slow push in.", mode: "video" };
+    const quote = await answer(await enhance.POST!(json("/api/prompt/enhance", { ...ask, quoteOnly: true })));
+    expect(quote.status, JSON.stringify(quote.body)).toBe(200);
+    expect(Object.keys(quote.body).sort()).toEqual(["estimateCredits"]);
+    noWriter("POST /api/prompt/enhance quote", quote.body);
+    const ran = await answer(await enhance.POST!(json("/api/prompt/enhance", { ...ask, maxCredits: quote.body.estimateCredits })));
+    expect(ran.status, JSON.stringify(ran.body)).toBe(200);
+    expect(Object.keys(ran.body).sort()).toEqual(["prompt", "provider"]);
+    /* The job row keeps the writer it ran on: that id is checked too. */
+    const ranOn = String((await db().execute("SELECT model FROM paid_text_jobs WHERE kind='enhance' ORDER BY created_at DESC LIMIT 1")).rows[0]?.model ?? "");
+    expect(ranOn).not.toBe("");
+    writers.add(ranOn);
+    noWriter("POST /api/prompt/enhance quote (again, with the id it ran on)", quote.body);
+    noWriter("POST /api/prompt/enhance", ran.body);
+  });
+
+  /* The usage read with its per-take lines (the house workspace reads in dollars) and the export: a take whose prompt the writer wrote. */
+  const house = { ...workspace("house"), id: HOUSE_WORKSPACE_ID, slug: HOUSE_WORKSPACE_ID, dbUrl: `file:${path.join(dir, `house-${randomUUID().slice(0, 8)}.db`)}` };
+  const usage = await route("app/api/usage/route.ts");
+  await inTenant(house, async () => {
+    await ready();
+    const engine = MODELS.find((m) => m.kind === "video")!.id;
+    for (const refine of writers) {
+      await db().execute({ sql: "INSERT INTO generations(id,model,prompt,params,status,cost_usd,refine_model,refine_cost_usd,refine_in_tokens,refine_out_tokens,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        args: [`gen_writer_${randomUUID()}`, engine, "A lighthouse at dusk.", "{}", "succeeded", 0.5, refine, 0.001, 60, 120, person.id, Date.now(), Date.now()] });
+    }
+    expect((await db().execute("SELECT COUNT(*) AS n FROM generations WHERE refine_model IS NOT NULL")).rows[0].n).toBe(writers.size);
+    const read = await answer(await usage.GET!(new Request("https://particl.test/api/usage")));
+    expect(read.status, JSON.stringify(read.body).slice(0, 300)).toBe(200);
+    const recent = read.body.recent as Record<string, unknown>[];
+    expect(recent.length).toBe(writers.size);
+    for (const line of recent) { expect(line).not.toHaveProperty("refineModel"); expect(line).not.toHaveProperty("refineLabel"); expect(line.refineCostUsd).not.toBeNull(); }
+    for (const row of read.body.refines as Record<string, unknown>[]) { expect(row).not.toHaveProperty("model"); expect(row).not.toHaveProperty("label"); }
+    expect(Number(read.body.promptCount)).toBe(writers.size);
+    noWriter("GET /api/usage", read.body);
+    const exported = await workspaceExport(person.id, person.email) as unknown as { contents?: Record<string, Record<string, unknown>[]> } & Record<string, unknown>;
+    const takes = (exported.contents ?? (exported as unknown as Record<string, Record<string, unknown>[]>)).generations;
+    expect(takes.length).toBe(writers.size);
+    for (const take of takes) expect(take, String(take.id)).not.toHaveProperty("refine_model");
+    noWriter("the export", exported);
+    /* The rows keep what wrote each prompt. */
+    expect((await db().execute("SELECT COUNT(*) AS n FROM generations WHERE refine_model IS NOT NULL")).rows[0].n).toBe(writers.size);
+  });
+});
+
 test("the matcher finds every slot's id, the writer's and an effort, and lets engines through", () => {
   for (const id of [HIGH, MEDIUM, LOW, WRITER, DIRECT_MODEL_IDS[MEDIUM]]) expect(thinkingModelNames(JSON.stringify({ model: id })), id).not.toEqual([]);
   expect(thinkingModelNames("reasoning_effort, effort: high")).toHaveLength(2);

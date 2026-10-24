@@ -125,8 +125,11 @@ function generation(row: Row, creditWorkspace: boolean) {
       if (row.kind === "audio") { delete params.estCredits; delete params.credits; delete params.tier; }
     }
   }
+  /* The prompt writer's model is not exported (Amendment (iii) §E; owner, 24 Oct 2026, item 14 (b)): the column keeps it. */
+  const { refine_model: _refineModel, ...shown } = row;
+  void _refineModel;
   /* An audio take's token count is the voice vendor's credits. */
-  return { ...row, ...(creditWorkspace && row.kind === "audio" ? { total_tokens: null } : {}), params };
+  return { ...shown, ...(creditWorkspace && row.kind === "audio" ? { total_tokens: null } : {}), params };
 }
 
 /** Tenant data plus the requesting owner's private work; never collaborators' private drafts. */

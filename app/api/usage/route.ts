@@ -4,7 +4,6 @@ import { db, ready } from "@/lib/db";
 import { syncActive } from "@/lib/jobs";
 import { modelLabel } from "@/lib/models";
 import { hasFreeTier, gatewayCredits } from "@/lib/enhance";
-import { prettyModel } from "@/lib/models";
 import { PROVIDERS, providerConfigured, providerVia } from "@/lib/providers";
 import { elevenConfigured, subscription, FALLBACK_USD_PER_CREDIT } from "@/lib/elevenlabs";
 import { requireUser, withTenant } from "@/lib/auth";
@@ -317,8 +316,7 @@ export const GET = withTenant(async function GET(req: Request) {
       credits: billCredits(Number(r.cost_usd) + Number(r.refine_cost_usd ?? 0), marginKeyOf(r.kind ?? "video", r.model)),
       renderCostUsd: Number(r.cost_usd),
       refineCostUsd: r.refine_cost_usd == null ? null : Number(r.refine_cost_usd),
-      refineModel: r.refine_model ?? null,
-      refineLabel: r.refine_model ? prettyModel(r.refine_model) : null,
+      /* The prompt writer's share, never its model (Amendment (iii) §E; owner, 24 Oct 2026, item 14 (b)): the row keeps refine_model. */
       refineInTokens: r.refine_in_tokens == null ? null : Number(r.refine_in_tokens),
       refineOutTokens: r.refine_out_tokens == null ? null : Number(r.refine_out_tokens),
       totalTokens: Number(r.total_tokens),
@@ -352,8 +350,9 @@ export const GET = withTenant(async function GET(req: Request) {
           storeMs: pick(rows, "store_ms"),
         }));
     })(),
+    /* What the prompt writer wrote and cost, per writer, without naming one (Amendment (iii) §E; owner, 24 Oct 2026, item 14 (b)). */
     refines: refines.rows.map((r: any) => ({
-      model: r.model, label: prettyModel(r.model), n: Number(r.n),
+      n: Number(r.n),
       inTokens: Number(r.in_tokens), outTokens: Number(r.out_tokens),
       tokens: Number(r.in_tokens) + Number(r.out_tokens),
       spend: Number(r.spend), credits: Number(r.credits ?? 0),

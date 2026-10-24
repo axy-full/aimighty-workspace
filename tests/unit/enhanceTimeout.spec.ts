@@ -283,7 +283,8 @@ test("a long prompt in a heavier script is priced as it costs: quoted above 1 cr
     const quoted = await ask(heavy, { quoteOnly: true });
     expect(quoted.status).toBe(200);
     const quote = await quoted.json();
-    expect(quote.model).toBe(writer.id);
+    /* The price only: never the writer's model (Amendment (iii) §E; owner, 24 Oct 2026, item 14 (b)). The job row says which writer ran, below. */
+    expect(quote).not.toHaveProperty("model");
     expect(quote.estimateCredits, "a heavier script at the limit costs more, and says so").toBeGreaterThan(1);
     expect(quote.estimateCredits, "today's catalogue and terms").toBe(2);
     expect(quote.estimateUsd, "a vendor's dollars never reach a credits workspace").toBeUndefined();
@@ -306,6 +307,8 @@ test("a long prompt in a heavier script is priced as it costs: quoted above 1 cr
     expect(sent).toHaveLength(1);
     const settled = await traces(ws);
     expect(settled.jobs.map((j) => j.status)).toEqual(["succeeded"]);
+    const { db } = await import("../../lib/db");
+    expect((await db().execute("SELECT model FROM paid_text_jobs")).rows.map((r) => r.model)).toEqual([writer.id]);
     expect(settled.meters.map((m) => Number(m.billed_credits))).toEqual([quote.estimateCredits]);
     expect(await balanceOf(ws)).toBe(1000 - quote.estimateCredits);
   });

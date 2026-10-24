@@ -170,7 +170,7 @@ test("the answer streams word by word, and the workspace is charged when the las
     /* The same press again: the saved answer, never a second call or charge. */
     const again = await route(stream("stream-full-1"));
     expect(again.headers.get("Idempotency-Status")).toBe("complete");
-    expect(await again.json()).toEqual({ prompt: LONG, provider: "claude", writer: WRITER });
+    expect(await again.json()).toEqual({ prompt: LONG, provider: "claude" });
     expect(calls).toBe(1);
     expect(await balanceOf("ws_stream_full")).toBe(999);
   });
@@ -339,7 +339,7 @@ async function phases(o: { finishGate?: Promise<void>; finishFails?: Error; sign
   const claims: { status: number; body: Record<string, unknown> }[] = [];
   let finishing = false;
   const body = enhanceStream({
-    answer: { prompt: "A lone tree in steady rain.", provider: "claude", writer: WRITER },
+    answer: { prompt: "A lone tree in steady rain.", provider: "claude" },
     finish: async () => { finishing = true; calls.push("finish"); await o.finishGate; if (o.finishFails) throw o.finishFails; calls.push("charged"); },
     abandon: async () => { calls.push("abandon"); },
     complete: async (status, json) => { claims.push({ status, body: JSON.parse(json) }); },
@@ -381,7 +381,7 @@ test("the stream's phases: a reader gone while the charge is being made changes 
   await until(() => p.claims.length > 0);
   await new Promise((r) => setTimeout(r, 30));
   expect(p.calls).toEqual(["finish", "charged"]);
-  expect(p.claims).toEqual([{ status: 200, body: { prompt: "A lone tree in steady rain.", provider: "claude", writer: WRITER } }]);
+  expect(p.claims).toEqual([{ status: 200, body: { prompt: "A lone tree in steady rain.", provider: "claude" } }]);
 });
 
 test("the stream's phases: a finish refused by paid text is said as Nothing billed; any other failure claims nothing about the bill", async () => {

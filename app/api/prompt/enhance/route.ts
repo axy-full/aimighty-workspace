@@ -90,17 +90,18 @@ export const POST = withTenant(async function POST(req: Request) {
         await result.abandon?.("The answer was not a prompt.");
         return NextResponse.json({ error: parsed.reason, nothingBilled: true }, { status: 502 });
       }
-      if (stream && result.finish && result.abandon) return streamAnswer({ result, prompt: parsed.prompt, provider, writer, claim: claim!, signal: req.signal });
-      return NextResponse.json({ prompt: parsed.prompt, provider, writer }, { headers: { "Cache-Control": "no-store" } });
+      if (stream && result.finish && result.abandon) return streamAnswer({ result, prompt: parsed.prompt, provider, claim: claim!, signal: req.signal });
+      /* The answer is the prompt and the enhancer the person chose: never the writer's model (Amendment (iii) §E; owner, 24 Oct 2026, item 14 (b)). */
+      return NextResponse.json({ prompt: parsed.prompt, provider }, { headers: { "Cache-Control": "no-store" } });
     } catch (error) { return paidTextFailure(error); }
   };
   return quoteOnly ? run() : withGenerationRequest(req, got.user.id, run);
 });
 
 /** The answer, word by word, in its own module (lib/enhanceStream.ts: the phases, and what the claim replays for each). */
-function streamAnswer(o: { result: PaidTextResult; prompt: string; provider: EnhancerProvider; writer: string; claim: GenerationRequest; signal: AbortSignal }): Response {
+function streamAnswer(o: { result: PaidTextResult; prompt: string; provider: EnhancerProvider; claim: GenerationRequest; signal: AbortSignal }): Response {
   const body = enhanceStream({
-    answer: { prompt: o.prompt, provider: o.provider, writer: o.writer },
+    answer: { prompt: o.prompt, provider: o.provider },
     finish: () => o.result.finish!(),
     abandon: (why) => o.result.abandon!(why),
     complete: (status, json) => completeDeferredRequest(o.claim, status, json),
