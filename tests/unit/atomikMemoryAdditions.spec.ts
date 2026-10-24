@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { GEMINI_IDS, LOW, OPENAI_IDS } from "../helpers/thinkingSlots";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -240,7 +241,10 @@ test("the brand kit's lines are offered to pick; each picked line lands as an or
 
 /* The reader is the Low slot's model (tests/helpers/thinkingSlots): the memory read is a routine turn. */
 const READER: CatalogModel = { id: LOW, name: "Reader", owner: "anthropic", type: "language", description: "", contextWindow: 200000, maxTokens: 8192,
-  pricing: { input: "0.00003", output: "0.00015" } };
+  pricing: { input: "0.0000319", output: "0.000163" } }; // made-up rates
+test("the reader's made-up rates are no catalogue entry's", () => {
+  expect(vendorRatesIn(READER.pricing)).toEqual([]);
+});
 const PASTE = ["- Brand colours are teal and warm sand", "- Our audience is skaters in coastal towns", "- Packs are $49 each", "- A premium price point, never discount-led", "- Always end on the board"].join("\n");
 /** A provider's reply: the proposals as `content`, at `cost`. */
 const replyWith = (content: string, cost = 0.01) => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content } }], usage: { cost, prompt_tokens: 900, completion_tokens: 120 } }) });

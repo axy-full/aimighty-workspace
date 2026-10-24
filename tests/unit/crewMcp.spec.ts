@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -192,7 +193,8 @@ test("a complete Grok round reads its selected MCP context, settles once and rev
       const active = (await listMembers(owner, session.projectId)).slice(0, 1).map(member => ({ ...member, isChair: true }));
       const project = { ...newProject("A private project"), brief: "This brief belongs only to this project", script: "Do not include this script" };
       const selected = { ...session, context: { ...session.context, script: false } };
-      const rate = { inputUsdPerToken: .000001, outputUsdPerToken: .000003 };
+      const rate = { inputUsdPerToken: .00000113, outputUsdPerToken: .00000349 }; // made-up rates
+      expect(vendorRatesIn(rate)).toEqual([]);
       const quote = quoteRound({ session: selected, project, active, rate, transcriptChars: 0 });
       const result = await runRound({ session: selected, project, active, rate, ceilingUsd: quote.ceilingUsd, userId: owner, emit: event => events.push(event) });
       expect(result.billed, JSON.stringify(events)).toBe(true); expect(result.spendCr).toBeGreaterThan(0);

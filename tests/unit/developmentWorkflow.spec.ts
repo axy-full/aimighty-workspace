@@ -1,6 +1,7 @@
 import { fundFixtureWorkspace } from "../helpers/fundFixtureWorkspace";
 import { ASTRA, BUDGET_CLAUDE } from "../helpers/runtimeIds";
 import { GEMINI_IDS, GROK_IDS, LOW, MEDIUM, OTHER_CLAUDE } from "../helpers/thinkingSlots";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { test, expect } from '@playwright/test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -19,7 +20,12 @@ const dir = mkdtempSync(path.join(tmpdir(), 'particl-development-'));
 process.env.PLATFORM_DATABASE_URL = 'file:' + path.join(dir, 'platform.db');
 process.env.KEYRING_SECRET ??= 'unit-test-keyring-secret-unit-test-keyring';
 /* The Medium slot's own model (tests/helpers/thinkingSlots), at a made-up rate. */
-const model: CatalogModel = { id: MEDIUM, name: 'Claude', owner: 'anthropic', type: 'language', description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: .0000001, output: .0000003 } };
+const model: CatalogModel = { id: MEDIUM, name: 'Claude', owner: 'anthropic', type: 'language', description: '', contextWindow: 200000, maxTokens: 8192, pricing: { input: .000000113, output: .000000379 } };
+/* Its cache rates, as made up as the rest: a read under input, a write over it. */
+const CACHE_RATES = { input_cache_read: .0000000139, input_cache_write: .000000143 };
+test("the fixture's made-up rates are no catalogue entry's", () => {
+  expect(vendorRatesIn({ ...model.pricing, ...CACHE_RATES })).toEqual([]);
+});
 function workspace(): TenantWorkspace {
   const id = randomUUID();
   return { id, slug: 'unit', name: 'Unit', legacy: false, dbUrl: 'file:' + path.join(dir, id + '.db'), dbToken: null,
@@ -466,7 +472,7 @@ test('an OpenAI key does not make OpenAI a development model: with only OpenAI s
     const ws = workspace(); ws.keys.openai = 'test-only-never-sent';
     await runInTenant(ws, async () => {
       const { request } = await fixture(), h = harness();
-      const priced: CatalogModel = { ...model, id: ASTRA, owner: 'openai', pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
+      const priced: CatalogModel = { ...model, id: ASTRA, owner: 'openai', pricing: { ...model.pricing, ...CACHE_RATES } };
       h.deps.models = async () => [priced]; request.model = priced.id;
       await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toThrow("Atomik's thinking isn't connected right now. Nothing billed.");
       await expect(prepareDevelopmentJob({ ...request, sourceHash: 'a'.repeat(64), maxCredits: 100, maxUsd: 1 }, 'owner', undefined, h.deps)).rejects.toThrow("Atomik's thinking isn't connected right now. Nothing billed.");
@@ -486,7 +492,7 @@ test('a TEXT_DIRECT development job is quoted at its cold cache ceiling and sett
       process.env.TEXT_DIRECT = 'anthropic';
       // Without cache prices a direct Claude call has no ceiling: refused before any reservation.
       await expect(quoteDevelopmentJob(request, 'owner', h.deps)).rejects.toMatchObject({ status: 503 });
-      const priced: CatalogModel = { ...model, pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
+      const priced: CatalogModel = { ...model, pricing: { ...model.pricing, ...CACHE_RATES } };
       h.deps.models = async () => [priced];
       const quote = await quoteDevelopmentJob(request, 'owner', h.deps);
       delete process.env.TEXT_DIRECT;
@@ -504,7 +510,7 @@ test('a TEXT_DIRECT development job is quoted at its cold cache ceiling and sett
       const [done] = await listDevelopmentJobs('owner', request.projectId, undefined, h.deps);
       expect(done.status).toBe('succeeded');
       expect(h.calls).toHaveLength(3);
-      expect(done.costUsd).toBeCloseTo(3 * (30 * .0000001 + 30 * .00000001 + 40 * .000000125 + 20 * .0000003), 15);
+      expect(done.costUsd).toBeCloseTo(3 * (30 * .000000113 + 30 * .0000000139 + 40 * .000000143 + 20 * .000000379), 15);
       expect(h.events.at(-1)).toMatchObject({ engine: 'anthropic', status: 'succeeded' });
     });
   } finally {
@@ -520,7 +526,7 @@ test('a TEXT_DIRECT development job stops on unknown direct usage: uncertain at 
     await runInTenant(workspace(), async () => {
       const { request } = await fixture();
       const h = harness();
-      const priced: CatalogModel = { ...model, pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
+      const priced: CatalogModel = { ...model, pricing: { ...model.pricing, ...CACHE_RATES } };
       h.deps.models = async () => [priced];
       const { job } = await prepareDevelopmentJob(await approve(request, h.deps), 'owner', undefined, h.deps);
       h.deps.models = async () => { throw new Error('Must use saved model snapshot.'); };
