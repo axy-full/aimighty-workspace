@@ -22,7 +22,7 @@ import { composerButtonParts, EMPTY_PROMPT, READING_MODELS, shownTotal, type Com
 import { cleanSetup, composeForSend, recoverSetup, withoutSetup, type FilmSetup } from "@/lib/workspace/film-vocabulary";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { useComposer, type ComposerSent } from "@/lib/workspace/use-composer";
-import { goFigure, hiddenInMake, MAKE_MODEL_PREFERENCE, MAKE_PICKS, madeValue, makeQuoteValue, rowSettings, shownDollars } from "@/lib/shell/make-price";
+import { goFigure, hiddenInMake, MAKE_MODEL_PREFERENCE, MAKE_PICKS, madeValue, makeQuoteValue, rowSettings, shownFor } from "@/lib/shell/make-price";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
@@ -443,12 +443,15 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     : approximate ? { value: null, about: composer.buttonParts.price, credits: total, usd: liveUsd != null && !composer.quote?.takes ? liveUsd * count : null }
       /* In dollars only when the whole figure is known in dollars (lib/shell/make-price.ts › goFigure): the take's own, plus the enhancement's when one is added. */
       : { ...goFigure({ total, count, type: state.type, takeUsd, batchRequoted: Boolean(composer.quote?.takes), enhanceCredits, enhanceUsd }), about: null };
-  /* Kept from the last figures shown before a press (while it is sending there is no figure, and what was shown stands). */
+  /* Replaced whenever the button shows a figure (Cinema Studio's approximate one included, which leaves nothing in dollars); kept only while
+     there is none, as while a press is sending (lib/shell/make-price.ts › shownFor). */
+  const goShown = goPrice != null;
   const goCredits = goPrice?.value && goPrice.value.kind !== "free" ? goPrice.value.credits : null;
   const goUsd = goPrice?.value ? goPrice.usd ?? null : null;
   useEffect(() => {
-    if (goCredits != null) shownUsd.current = shownDollars({ credits: takeCredits ?? null, usd: takeUsd }, { credits: goCredits, usd: goUsd });
-  }, [goCredits, goUsd, takeCredits, takeUsd]);
+    const next = shownFor(goShown, { credits: takeCredits ?? null, usd: takeUsd }, { credits: goCredits, usd: goUsd });
+    if (next) shownUsd.current = next;
+  }, [goShown, goCredits, goUsd, takeCredits, takeUsd]);
   const balanceNow = balance !== undefined ? balance : session.credits?.balance ?? null;
   /* Make stays pressable when the balance is short (the take waits, held, until credits arrive): the line only says so. */
   const short = !spendOff && !approximate && total != null && !submitting ? shortByWords(balanceNow, makeQuoteValue(total + (enhanceCredits ?? 0), state.type)) : null;

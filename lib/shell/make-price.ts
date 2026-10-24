@@ -121,6 +121,15 @@ export function shownDollars(take: { credits: number | null; usd: number | null 
 }
 
 /**
+ * The dollars Make keeps for its toast after the figures on screen change: a new map whenever the button shows a figure (an approximate one
+ * has no exact credits, and an approximate take carries no dollars, so that map is empty and the toast reads "—"), or null to keep the last
+ * one while the button shows none (a press sending).
+ */
+export function shownFor(goShown: boolean, take: { credits: number | null; usd: number | null }, go: { credits: number | null; usd: number | null }): Map<number, number> | null {
+  return goShown ? shownDollars(take, go) : null;
+}
+
+/**
  * What the toast says a press cost (lib/shell/make.ts › madeLine): the accepted credits, carrying the dollars Make showed for that same
  * figure. In the house that reads the dollars, or "—" for a figure Make never showed in dollars (never credits turned into dollars); a
  * workspace that pays in credits reads the credits, as before.

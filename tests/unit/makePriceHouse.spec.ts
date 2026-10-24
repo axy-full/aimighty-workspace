@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { aboutWords, goFigure, madeValue, makePriceTitle, makePriceWords, makeQuoteValue, shownDollars, shownValue, type MakeShown } from "../../lib/shell/make-price";
+import { aboutWords, goFigure, madeValue, makePriceTitle, makePriceWords, makeQuoteValue, shownDollars, shownFor, shownValue, type MakeShown } from "../../lib/shell/make-price";
 import { cinemaPriceDollars, cinemaPriceWords } from "../../lib/cinemaHold";
 import { CREDITS_MODE, exact, FREE, modeOf, NO_AT_COST_FIGURE, NO_AT_COST_TITLE, PAYS_AT_COST_TITLE, priceTitle, priceWords, upTo } from "../../lib/shell/price-words";
 
@@ -112,4 +112,14 @@ test("the toast after a press: a workspace that pays in credits reads the credit
   }
   expect(priceWords(madeValue(0, new Map()), CUSTOMER)).toBe("free");
   expect(shownDollars({ credits: null, usd: 0.5 }, { credits: 7, usd: Number.NaN }).size).toBe(0);
+});
+
+test("the toast's dollars are replaced whenever the button shows a figure, and kept only while it shows none", () => {
+  /* A press sending: no figure on the button, what was shown stands. */
+  expect(shownFor(false, { credits: 7, usd: 0.5 }, { credits: 7, usd: 0.5 })).toBeNull();
+  /* Cinema Studio's approximate figure: no exact credits and no take dollars, so an earlier engine's dollars cannot survive into its toast. */
+  const cinemaShown = shownFor(true, { credits: 31, usd: null }, { credits: null, usd: null });
+  expect(cinemaShown?.size).toBe(0);
+  expect(priceWords(madeValue(7, cinemaShown!), HOUSE)).toBe(NO_AT_COST_FIGURE);
+  expect(shownFor(true, { credits: 7, usd: 0.5 }, { credits: 21, usd: 1.5 })?.get(21)).toBe(1.5);
 });
