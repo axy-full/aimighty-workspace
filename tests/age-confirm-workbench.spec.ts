@@ -15,8 +15,9 @@ const SCREENS: { name: string; path: string; ready: (page: Page) => Promise<void
   { name: "signup-invited", path: "/signup?code=age-test-code", ready: async (page) => { await page.route(/\/api\/auth\/signup(\?.*)?$/, (r) => r.request().method() === "GET" ? r.fulfill({ json: { mode: "self-serve", open: true, verificationRequired: false, email: "invited@example.test", name: "Invited" } }) : r.continue()); }, box: (p) => p.getByTestId("signup-terms") },
   { name: "team-invite", path: "/invite/age-test-code", ready: async (page) => { await page.route("**/api/auth/accept?code=*", (r) => r.fulfill({ json: { workspace: "A studio", email: "new@example.test", name: "New", role: "member", hasAccount: false, signedInAsInvitee: false } })); }, box: (p) => p.getByTestId("invite-terms") },
   { name: "setup", path: "/setup", ready: async () => {}, box: (p) => p.getByTestId("setup-terms") },
-  { name: "join-google", path: "/v12-join?join=start&google=1", ready: async () => {}, box: (p) => p.getByTestId("v12-join-age") },
 ];
+/* The prototype-12 join sheet's Google row (`join-google`, on its test page /v12-join) went with that build (23 Oct 2026; docs/old-shells.md). */
+test.fixme("join-google: the join sheet's Continue with Google row carries the same required 18+ tick — no home: the visitor join sheet is deleted, and today's /login Google button needs no tick (tests/google-signin-workbench.spec.ts); owner question: does v31.16 bring a join sheet with Google back?", () => {});
 
 for (const screen of SCREENS) {
   test(`${screen.name}: the 18+ tick is the required sentence with a Terms link, 44 px, keyboard reachable with a visible ring, and nothing overflows`, async ({ page }, info) => {

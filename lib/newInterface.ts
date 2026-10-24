@@ -1,7 +1,9 @@
 import { isHouseWorkspace } from "./houseWorkspace";
 
 /**
- * Who sees the interface being built from design/particl-prototype-12 (docs/redesign-plan.md).
+ * Who has the new-interface switch on. v31.16 (design/particl-v31.16) is built behind it from scratch (owner, 23 Oct 2026);
+ * the prototype-12 build that sat behind it was deleted, so today the switch changes no screen: on or off, a workspace sees
+ * the live shell (docs/redesign-plan.md).
  *
  * Off for every customer workspace. On for the house workspace (lib/houseWorkspace.ts), and for any workspace the
  * platform owner lists in the site setting `newInterfaceWorkspaces` (lib/site/settings.ts), which is also how the

@@ -62,8 +62,8 @@ export type JudgeToast = (text: string, undo?: { label: string; run: () => void 
 
 /**
  * What a surface may change about the judge's words and its reason rule, never what it writes. Left out, everything is as it has always been (the take
- * cards, review mode, the Inspector). The v25 card and preview pass theirs (`V25_JUDGE`, components/v12/board/card-model.ts): "sent" (owner, 20 Oct 2026) and
- * their own reason rule ("Other" needs a line, one word is enough).
+ * cards, review mode, the Inspector). The prototype-12 build's step cards passed their own ("sent", owner, 20 Oct 2026, and a reason rule where
+ * "Other" needs a line); that build is deleted (23 Oct 2026) and no caller passes options today.
  */
 export type JudgeOptions = {
   /** The word in ✓'s toast: "Shot 2 v1 approved" by default. */

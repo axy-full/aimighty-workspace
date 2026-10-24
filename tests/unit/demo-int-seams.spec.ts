@@ -10,9 +10,9 @@ const read = (file: string) => readFileSync(join(__dirname, "..", "..", file), "
 const shell = read("components/graphite/SuitesShell.tsx");
 
 test("seam b: the phone's own screens never share the page with the desktop's Make panel or Atomik's panel", () => {
-  /* Make's panel mounts through `makePanel`, which is never true on the phone (redesign C3 adds: nor while Make is the
-     new frame's page, unless a quick tool is open over it). */
-  expect(shell).toMatch(/const makePanel = Boolean\(shell\.make\) && !phoneOn && /);
+  /* Make's panel mounts through `makePanel`, which is never true on the phone (the prototype-12 frame's "Make as a page" went with
+     that build, 23 Oct 2026). */
+  expect(shell).toMatch(/const makePanel = Boolean\(shell\.make\) && !phoneOn\b/);
   expect(shell).toMatch(/\{makePanel \? \(/);
   expect(shell).toMatch(/\{!phoneOn \? <AtomikMount ctx=\{screenCtx\} \/> : null\}/);
   /* phoneOn is declared before the line that reads it. */
