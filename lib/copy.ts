@@ -68,6 +68,10 @@ export const THINKING = {
   sampleLine: "Plans and writing quote higher at High",
   workspaceDefault: "Default for new productions",
   adminsOnly: "Admins only",
+  /** Whether each setting is served, in the platform owner's health detail (GET /api/health): by name, never a model or an effort. */
+  served: "served",
+  notSet: "not set",
+  notServed: "not served",
 } as const;
 
 /** A job's three ticks, at one price (Amendment (iii) A3). */
