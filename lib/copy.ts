@@ -178,6 +178,11 @@ export const QUESTIONS = {
   materialMedia: "Photos or clips",
   ceiling: "A spend limit for this film?",
   ceilingNone: "No limit",
+  /** "No limit" as it reads inside "I assumed … · Change". */
+  noLimit: "no limit",
+  /** A row read in place of its question (R2, H): "I assumed Hindi · Change", "from the brief · Change" (with the step's name). */
+  assumed: "I assumed",
+  fromThe: "from the",
 } as const;
 
 /** Money words (rule 14; Amendment (ii) A3: "free" is lowercase). */

@@ -1,6 +1,7 @@
-import { QUESTIONS } from "../copy";
+import { BUTTONS, QUESTIONS, STEPS } from "../copy";
 import type {
-  Checklist, ChecklistRow, FloorRow, MarkedRow, Picks, PillSet, Question, RecordValue, RecordView, RecordWrite, RowSource, RowState,
+  Checklist, ChecklistRow, FloorRow, MarkedRow, Pill, Picks, PillSet, Question, RecordValue, RecordView, RecordWrite, RowSource, RowState,
+  WorkspaceDefaults,
 } from "./questionTypes";
 
 /**
@@ -21,12 +22,32 @@ import type {
  *   - assumed: a house default (D8) or Atomik's pick ("Decide for me")                  ("I assumed … · Change");
  *   - open:    nothing in the record answers it.
  *
- * The order (G: "by what changes the result or the price most"; the spec gives no formula, so this is the lead's rule, listed
- * as an owner question):
- *   1. floor rows before above-floor rows (H: the floor is fixed and asked; above it, Atomik asks in its own words);
- *   2. a row is never asked while a row it reads is open (`dependsOn`: length's pills are by kind);
- *   3. then by rank, 1 first: each floor row's rank is read from H's "Sets" and "Why floor" columns (lib/productionModel/checklists.ts);
- *   4. then the checklist's own order.
+ * The order (G and H: "orders the open rows by what changes the result or the price most"; the owner, 24 Oct 2026, answer 1:
+ * as H says, deterministic, the tie-break written down):
+ *   1. floor rows before above-floor rows (H: a floor row is one with money attached, "must be known before money moves";
+ *      above it, Atomik asks in its own words and nothing there is priced);
+ *   2. a row is never asked while a row it reads is open (`dependsOn`: length's pills are by kind, so kind comes first);
+ *   3. then by rank, 1 first: each floor row's rank is what it changes in the result or the price, read from H's "Sets" and
+ *      "Why floor" columns (lib/productionModel/checklists.ts); every floor rank on a checklist is used once;
+ *   4. the tie-break: the checklist's own order (H's table order for the floor; G's ASKS order above it). Above-floor rows have
+ *      no rank, so they always fall to it.
+ * The order reads only the checklist and which rows are open: never the record's key order, the picks' or the `also` words'
+ * order, a clock or a random number. The same inputs give the same order.
+ *
+ * The lit pill (★, H: "Atomik's pick already lit as the default"), first that is one of the row's pills now:
+ *   Atomik's pick, where Atomik may pick it; then what an earlier row pre-fills (`prefill`: the Brief's "real" lights Elements'
+ *   consent, answer 4); then the house default (a row the workspace answered the same way three times, in the record with source
+ *   `default`: it answers an ordinary row, so here it only ever lights a person-only row that lists it in `proposedBy`, the spend
+ *   limit, answer 5); then the workspace's own default (`WorkspaceDefaults`, answer 7; never on a person-only row); then the
+ *   platform's (the checklist's ★: Hindi for language, No limit for the spend limit). "Decide for me" takes the same chain, less
+ *   what Atomik may not pick, where Atomik gives no pick. House over workspace over platform (answer 7): the spec orders the
+ *   workspace over the platform (SOW §4 Setup: platform → workspace → production → shot) and is silent on house against
+ *   workspace, so the owner's order stands.
+ *
+ * "Decide for me" (G; owner, 24 Oct 2026, answers 3 and 6) closes every open row at this step, floor and above the floor, each then
+ * reading "I assumed … · Change". A person-only row is never written: the spend limit reads "I assumed no limit · Change"
+ * (`decidedShows`) and is not asked again, from one record row that says "Decide for me" was pressed at this step
+ * (`decidedKey(step)`), which holds no figure, no cap and no limit. Nothing is set for the cap, which is what no limit means.
  *
  * Tenancy (rule 2): an engine is bound to its record's workspace and production. Every write carries both; a row the view
  * returns from another workspace is refused, never marked.
@@ -60,16 +81,28 @@ const STATE_OF: Readonly<Record<RowSource, RowState>> = {
 const isSource = (value: unknown): value is RowSource => typeof value === "string" && Object.hasOwn(STATE_OF, value);
 
 /**
+ * The record row that says "Decide for me" was pressed at a step (value "yes", source `assumed`). It is not a checklist row and
+ * never a question: it only lets a person-only row read its `decidedShows` without that row ever being written.
+ */
+export const decidedKey = (step: string) => `decided:${step}`;
+
+/**
  * A record view over plain rows: what fixtures, and the engine's own session, read. The record's store (M2) will satisfy the
  * same interface from `film_record_rows`.
  */
 export function inMemoryRecord(
   workspaceId: string,
   productionId: string,
-  rows: Readonly<Record<string, { value: string; source: RowSource; carriedFrom?: string }>>,
+  rows: Readonly<Record<string, { value: string; source: RowSource; carriedFrom?: string; fromStep?: string }>>,
 ): RecordView {
   const held = new Map(
-    Object.entries(rows).map(([key, row]) => [key, Object.freeze({ workspaceId, value: row.value, source: row.source, ...(row.carriedFrom ? { carriedFrom: row.carriedFrom } : {}) })]),
+    Object.entries(rows).map(([key, row]) => [
+      key,
+      Object.freeze({
+        workspaceId, value: row.value, source: row.source,
+        ...(row.carriedFrom ? { carriedFrom: row.carriedFrom } : {}), ...(row.fromStep ? { fromStep: row.fromStep } : {}),
+      }),
+    ]),
   );
   return Object.freeze({ workspaceId, productionId, get: (key: string) => held.get(key) ?? null });
 }
@@ -82,15 +115,19 @@ function withWrites(base: RecordView, writes: readonly RecordWrite[]): RecordVie
       write.key,
       write.value === null || write.source === null
         ? null
-        : { workspaceId: write.workspaceId, value: write.value, source: write.source, ...(write.reason === "carry" && write.from ? { carriedFrom: write.from } : {}) },
+        : {
+          workspaceId: write.workspaceId, value: write.value, source: write.source,
+          ...(write.reason === "carry" && write.from ? { carriedFrom: write.from } : {}),
+          ...(write.reason === "carry" && write.fromStep ? { fromStep: write.fromStep } : {}),
+        },
     );
   }
   return Object.freeze({ workspaceId: base.workspaceId, productionId: base.productionId, get: (key: string) => (latest.has(key) ? latest.get(key)! : base.get(key)) });
 }
 
-/** Every pill id a row can show, whatever the row it reads holds. */
-const everyPill = (row: FloorRow): string[] =>
-  ("by" in row.pills ? Object.values(row.pills.sets) : [row.pills]).flatMap((set) => set.pills.map((pill) => pill.id));
+/** Every pill a row can show, whatever the row it reads holds. */
+const everyPillOf = (row: FloorRow): Pill[] => ("by" in row.pills ? Object.values(row.pills.sets) : [row.pills]).flatMap((set) => set.pills);
+const everyPill = (row: FloorRow): string[] => everyPillOf(row).map((pill) => pill.id);
 
 export interface QuestionEngine {
   readonly workspaceId: string;
@@ -109,10 +146,11 @@ export interface QuestionEngine {
    */
   answer(key: string, value: string, also?: Readonly<Record<string, string>>): QuestionEngine;
   /**
-   * "Decide for me": every open row closed with Atomik's pick (source `assumed`). A floor row without a pick takes its lit
-   * default (H: ★); an above-floor row has none, so it needs a pick. A row with `agentPicks` takes only what Atomik may
-   * assume. A person-only row (the spend limit) is never written: it stays unset, which means no limit, and a pick for it is
-   * refused. Rows that are already known or assumed keep their value.
+   * "Decide for me": every open row at this step closed with Atomik's pick (source `assumed`), floor and above the floor (answer
+   * 3). A floor row without a pick takes its lit default (see "The lit pill"); an above-floor row has none, so it needs a pick. A
+   * row with `agentPicks` takes only what Atomik may assume. A person-only row is never written and a pick for it is refused: the
+   * spend limit reads "I assumed no limit · Change" and is not asked again (answer 6); one without `decidedShows` (consent) stays
+   * open. Rows that are already known or assumed keep their value.
    */
   decideForMe(picks: Picks): QuestionEngine;
   /** Whether Atomik may ask an above-floor question about `key`: never a floor row, never a row the record holds (H). */
@@ -123,12 +161,18 @@ export interface QuestionEngine {
   readonly record: RecordView;
 }
 
-/** An engine over one step's checklist and one production's record. */
-export function questionEngine(checklist: Checklist, record: RecordView): QuestionEngine {
+/** An engine over one step's checklist and one production's record, with the workspace's own defaults where it has any. */
+export function questionEngine(checklist: Checklist, record: RecordView, defaults?: WorkspaceDefaults): QuestionEngine {
   if (!record || typeof record.workspaceId !== "string" || !record.workspaceId || typeof record.productionId !== "string" || !record.productionId) {
     throw new QuestionEngineError(NOT_HERE);
   }
-  return build(checklist, record, []);
+  /* Rule 2: another workspace's defaults are refused, never read. */
+  if (defaults !== undefined && (!defaults || defaults.workspaceId !== record.workspaceId || !defaults.values || typeof defaults.values !== "object")) {
+    throw new QuestionEngineError(NOT_HERE);
+  }
+  const values: Record<string, string> = {};
+  for (const [key, value] of Object.entries(defaults?.values ?? {})) if (typeof value === "string") values[key] = value;
+  return build(checklist, record, [], Object.freeze(values));
 }
 
 function pillsOf(row: FloorRow, read: (key: string) => RecordValue | null): PillSet {
@@ -137,20 +181,22 @@ function pillsOf(row: FloorRow, read: (key: string) => RecordValue | null): Pill
   return (on !== undefined && Object.hasOwn(row.pills.sets, on) ? row.pills.sets[on] : null) ?? { pills: [], lit: null };
 }
 
-function build(checklist: Checklist, base: RecordView, writes: readonly RecordWrite[]): QuestionEngine {
+function build(checklist: Checklist, base: RecordView, writes: readonly RecordWrite[], workspaceDefaults: Readonly<Record<string, string>>): QuestionEngine {
   const view = withWrites(base, writes);
   const { workspaceId, productionId } = base;
   const all: readonly ChecklistRow[] = [...checklist.floor, ...checklist.aboveFloor];
   const position = new Map(all.map((row, index) => [row.key, index]));
   const rowOf = (key: string) => all.find((row) => row.key === key) ?? null;
 
-  const read = (key: string): RecordValue | null => {
-    const value = view.get(key);
+  /** A reader over a view that refuses a row from another workspace, or one the record could not have written (rule 2). */
+  const readerOf = (over: RecordView) => (key: string): RecordValue | null => {
+    const value = over.get(key);
     if (value === null || value === undefined) return null;
     if (value.workspaceId !== workspaceId) throw new QuestionEngineError(NOT_HERE);
     if (!isSource(value.source) || typeof value.value !== "string") throw new QuestionEngineError(NOT_HERE);
     return value;
   };
+  const read = readerOf(view);
 
   /* A person-only row counts as answered only when the person said it (rule 11; film-record-schema question 7). */
   const answered = (row: ChecklistRow): RecordValue | null => {
@@ -158,9 +204,32 @@ function build(checklist: Checklist, base: RecordView, writes: readonly RecordWr
     return value && row.floor && row.personOnly && value.source !== "said" ? null : value;
   };
 
+  /** How a value reads inside "I assumed … · Change": the pill's words, or the value itself (the field's words, Atomik's words). */
+  const labelOf = (row: ChecklistRow, value: string) => {
+    if (!row.floor) return value;
+    const pill = pillsOf(row, read).pills.find((p) => p.id === value) ?? everyPillOf(row).find((p) => p.id === value);
+    return pill?.inLine ? QUESTIONS[pill.inLine] : pill?.copy ? QUESTIONS[pill.copy] : value;
+  };
+  const stepName = (step: string) => (Object.hasOwn(STEPS, step) ? STEPS[step as keyof typeof STEPS].toLowerCase() : null);
+  /** R2 and H: an assumed row reads "I assumed … · Change"; a known one "from the brief · Change", a carried one naming its step. */
+  const lineOf = (row: ChecklistRow, state: RowState, value: string | null, source: RowSource | null, fromStep: string | null) => {
+    if (state === "open" || value === null) return null;
+    if (state === "assumed") return `${QUESTIONS.assumed} ${labelOf(row, value)} · ${BUTTONS.change}`;
+    const name = source === "earlier_step" ? (fromStep ? stepName(fromStep) : null) : stepName(checklist.step);
+    return name ? `${QUESTIONS.fromThe} ${name} · ${BUTTONS.change}` : null;
+  };
+
+  /* "Decide for me" was pressed at this step: a person-only row with `decidedShows` reads it, and nothing is written to it. */
+  const decided = read(decidedKey(checklist.step)) !== null;
+
   const rows: MarkedRow[] = all.map((row) => {
     const value = answered(row);
-    return { key: row.key, floor: row.floor, state: value ? STATE_OF[value.source] : "open", value: value?.value ?? null, source: value?.source ?? null };
+    if (!value && decided && row.floor && row.personOnly && row.decidedShows !== undefined) {
+      return { key: row.key, floor: true, state: "assumed", value: row.decidedShows, source: "assumed", fromStep: null, line: lineOf(row, "assumed", row.decidedShows, "assumed", null) };
+    }
+    const state: RowState = value ? STATE_OF[value.source] : "open";
+    const fromStep = value?.source === "earlier_step" ? value.fromStep ?? null : null;
+    return { key: row.key, floor: row.floor, state, value: value?.value ?? null, source: value?.source ?? null, fromStep, line: lineOf(row, state, value?.value ?? null, value?.source ?? null, fromStep) };
   });
   const isOpen = new Set(rows.filter((row) => row.state === "open").map((row) => row.key));
 
@@ -178,6 +247,26 @@ function build(checklist: Checklist, base: RecordView, writes: readonly RecordWr
   }
   const open = ordered.map((row) => row.key);
   const firstFloor = (ordered.find((row) => row.floor && !(row.dependsOn ?? []).some((key) => isOpen.has(key))) ?? null) as FloorRow | null;
+
+  /**
+   * The lit pill's candidates, most binding first (see "The lit pill"), each one of the row's pills now. `agent` keeps only what
+   * Atomik may pick: what "Decide for me" takes where Atomik gives no pick.
+   */
+  const defaultsOf = (row: FloorRow, readNow: (key: string) => RecordValue | null, agent: boolean): string[] => {
+    const set = pillsOf(row, readNow);
+    const candidates: string[] = [];
+    if (row.prefill) {
+      const earlier = readNow(row.prefill.from)?.value;
+      if (earlier !== undefined && Object.hasOwn(row.prefill.values, earlier)) candidates.push(row.prefill.values[earlier]);
+    }
+    const held = readNow(row.key);
+    if (held && held.source === "default" && (!row.personOnly || (row.proposedBy ?? []).includes("house_default"))) candidates.push(held.value);
+    if (!row.personOnly && Object.hasOwn(workspaceDefaults, row.key)) candidates.push(workspaceDefaults[row.key]);
+    if (set.lit !== null) candidates.push(set.lit);
+    return candidates.filter(
+      (id) => set.pills.some((pill) => pill.id === id) && (!agent || (!row.personOnly && (!row.agentPicks || row.agentPicks.includes(id)))),
+    );
+  };
 
   /**
    * Whether a value is one this row takes from this answerer. Throws, naming nothing, when it is not. `person` is the person's
@@ -210,18 +299,19 @@ function build(checklist: Checklist, base: RecordView, writes: readonly RecordWr
     if (!row.floor) return;
     if (row.carries) {
       const carried = Object.hasOwn(row.carries, value) ? row.carries[value] : [];
-      const carrySource: RowSource = source === "said" ? "earlier_step" : "assumed";
+      /* A carried answer's source is "earlier step", with the step's name (owner, 24 Oct 2026, answer 8), whoever answered it. */
+      const carrySource: RowSource = "earlier_step";
       for (const target of [...new Set(Object.values(row.carries).flat().map((carry) => carry.key))]) {
         const held = now().get(target);
         const ours = held?.carriedFrom === row.key;
         if (held && !ours) continue;
         const carry = carried.find((c) => c.key === target);
         if (carry) {
-          if (!(ours && held!.value === carry.value && held!.source === carrySource)) {
-            out.push({ workspaceId, productionId, key: target, value: carry.value, source: carrySource, reason: "carry", from: row.key });
+          if (!(ours && held!.value === carry.value && held!.source === carrySource && held!.fromStep === row.step)) {
+            out.push({ workspaceId, productionId, key: target, value: carry.value, source: carrySource, reason: "carry", from: row.key, fromStep: row.step });
           }
         } else if (ours) {
-          out.push({ workspaceId, productionId, key: target, value: null, source: null, reason: "carry", from: row.key });
+          out.push({ workspaceId, productionId, key: target, value: null, source: null, reason: "carry", from: row.key, fromStep: row.step });
         }
       }
     }
@@ -249,7 +339,7 @@ function build(checklist: Checklist, base: RecordView, writes: readonly RecordWr
       const pick = picks && Object.hasOwn(picks, firstFloor.key) ? picks[firstFloor.key] : undefined;
       const pickable = (id: string) =>
         !firstFloor.personOnly && set.pills.some((pill) => pill.id === id) && (!firstFloor.agentPicks || firstFloor.agentPicks.includes(id));
-      const lit = pick !== undefined && pickable(pick) ? pick : set.lit;
+      const lit = pick !== undefined && pickable(pick) ? pick : defaultsOf(firstFloor, read, false)[0] ?? null;
       return {
         key: firstFloor.key,
         text: QUESTIONS[firstFloor.question],
@@ -274,7 +364,7 @@ function build(checklist: Checklist, base: RecordView, writes: readonly RecordWr
         check(row, v, k === key ? "person" : "read", (key) => now.get(key));
         write(out, row, v, "said", now.get(k) ? "change" : "answer");
       }
-      return build(checklist, base, [...writes, ...out]);
+      return build(checklist, base, [...writes, ...out], workspaceDefaults);
     },
 
     decideForMe(picks) {
@@ -284,23 +374,27 @@ function build(checklist: Checklist, base: RecordView, writes: readonly RecordWr
         if (row.floor && row.personOnly) throw new QuestionEngineError(PERSON_ONLY);
       }
       const out: RecordWrite[] = [];
+      /* "Decide for me" was pressed at this step (answer 6): the one row that lets the spend limit read "I assumed no limit" with
+         nothing written to it. It holds no figure, no cap and no limit. */
+      const marker = decidedKey(checklist.step);
+      if (read(marker) === null) out.push({ workspaceId, productionId, key: marker, value: "yes", source: "assumed", reason: "decide_for_me" });
       /* Row by row in asking order, re-reading after each, so a decided kind sets the length's pills before length is decided.
-         A person-only row is passed over: it stays unset. */
+         A person-only row is passed over: it is never written. */
       for (;;) {
-        const step = build(checklist, base, [...writes, ...out]);
+        const step = build(checklist, base, [...writes, ...out], workspaceDefaults);
         const key = step.open.find((k) => {
           const row = rowOf(k)!;
           return !(row.floor && row.personOnly);
         });
         if (key === undefined) break;
         const row = rowOf(key)!;
-        const now = step.record;
-        const pick = Object.hasOwn(picks, key) ? picks[key] : row.floor ? pillsOf(row, (k) => now.get(k)).lit : null;
+        const now = readerOf(step.record);
+        const pick = Object.hasOwn(picks, key) ? picks[key] : row.floor ? defaultsOf(row, now, true)[0] ?? null : null;
         if (pick === null || pick === undefined) throw new QuestionEngineError(`"Decide for me" needs a pick for ${key}.`);
-        check(row, pick, "agent", (k) => now.get(k));
+        check(row, pick, "agent", now);
         write(out, row, pick, "assumed", "decide_for_me");
       }
-      return build(checklist, base, [...writes, ...out]);
+      return build(checklist, base, [...writes, ...out], workspaceDefaults);
     },
 
     mayAsk(key) {

@@ -1,4 +1,4 @@
-import type { AboveFloorRow, Checklist, FloorRow, Pill, PillSet } from "./questionTypes";
+import type { AboveFloorRow, Checklist, FloorRow, Pill, PillSet, Prefill } from "./questionTypes";
 
 /**
  * D1 checklists, beside lib/productionModel/filmTypes.ts (SOW D1; Amendment, 22 October 2026 (iii), H and K): per rail × step,
@@ -14,10 +14,11 @@ import type { AboveFloorRow, Checklist, FloorRow, Pill, PillSet } from "./questi
 const pillSet = (lit: string | null, ...pills: Pill[]): PillSet => ({ pills, lit });
 
 /**
- * H, Brief. Ranks follow H's "Sets" and "Why floor" columns, most first: kind sets the rail and every default below it; length
- * scales the quote; plays sets every frame and take (a change remakes everything); language prices voice per language; real
- * sets the consent tick and uploaded-or-generated; material prices Reading; the spend limit is a stop, not a change to the
- * film or its price. That is also H's table order.
+ * H, Brief. Ranks are G's and H's rule, "by what changes the result or the price most" (the owner, 24 Oct 2026, answer 1), read
+ * from H's "Sets" and "Why floor" columns, most first: kind sets the rail and every default below it; length scales the quote;
+ * plays sets every frame and take (a change remakes everything); language prices voice per language; real sets the consent tick
+ * and uploaded-or-generated; material prices Reading; the spend limit is a stop, not a change to the film or its price. That is
+ * also H's table order. Each rank is used once, so no tie-break is needed between floor rows (the test holds it to that).
  */
 const BRIEF_FLOOR: readonly FloorRow[] = [
   {
@@ -77,6 +78,8 @@ const BRIEF_FLOOR: readonly FloorRow[] = [
     rank: 4,
     question: "language",
     shape: "pick_one",
+    /* Hindi ★ is the platform default for now (owner, 24 Oct 2026, answer 7). A workspace's own default lights another pill, and a
+       house default answers the row: house over workspace over platform (questionEngine.ts, "The lit pill"). */
     pills: pillSet("hindi", { id: "hindi", copy: "hindi" }, { id: "english", copy: "english" }, { id: "both", copy: "both" }),
     field: true,
     answeredBy: ["brief_document", "script_lines", "house_default"],
@@ -129,16 +132,29 @@ const BRIEF_FLOOR: readonly FloorRow[] = [
        {"cap":"none"}. H's other two pills, 200 cr and 500 cr, are SAMPLES awaiting the owner's ruling: a figure cannot be a
        reference without a way to set the production's cap from here, which does not exist, so they are wired to nothing and
        written nowhere. No field: no free-text figure. */
-    pills: pillSet("none", { id: "none", copy: "ceilingNone" }),
+    pills: pillSet("none", { id: "none", copy: "ceilingNone", inLine: "noLimit" }),
     field: false,
     /* Only a person sets a spend limit (rule 11, rule 14): "Decide for me" never writes it, and a house default never answers
-       it (film-record-schema question 7). Left unset, it means no limit. */
+       it (film-record-schema question 7). Left unset, it means no limit. The owner, 24 Oct 2026: the platform default is No
+       limit and never anything else (answer 5); a house default (the workspace answering the same way three times) may be
+       proposed, lit on the card for the person to tap, never written (answer 5); after "Decide for me" it reads "I assumed no
+       limit · Change" and is not asked again, with nothing written (answer 6). */
     personOnly: true,
+    decidedShows: "none",
+    proposedBy: ["house_default"],
     answeredBy: ["workspace_monthly_limit"],
     sets: ["production_cap"],
     money: true,
   },
 ];
+
+/**
+ * The Brief's "real" pre-fills Elements' consent for that person (owner, 24 Oct 2026, answer 4): "Yes, and I have their consent"
+ * lights "Yes, attach it", "Yes, not yet" lights "Not yet". Lit only: the tick itself (who ticked, when, a file if one was attached)
+ * is recorded per element when it is first made, by a person, never by the engine or Atomik (rule 11). For the Elements step's
+ * consent row (H, Elements), whose checklist is a later step PR (L6); its pill ids are H's: yes, not_yet, not_real.
+ */
+export const CONSENT_FROM_BRIEF: Prefill = Object.freeze({ from: "real", values: Object.freeze({ yes_consent: "yes", yes_not_yet: "not_yet" }) });
 
 /** G, Brief, ASKS: the rows it lists that are not on the floor, in its order. Atomik asks above the floor in its own words. */
 const BRIEF_ABOVE_FLOOR: readonly AboveFloorRow[] = [

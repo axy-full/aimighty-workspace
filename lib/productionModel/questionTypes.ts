@@ -27,8 +27,11 @@ export type QuestionShape = "pick_one" | "a_b" | "yes_no" | "tap_frame" | "uploa
 /** A key into the copy table's QUESTIONS section: every word a question shows comes from lib/copy.ts (D12). */
 export type QuestionCopyKey = keyof typeof QUESTIONS;
 
-/** One answer pill. `id` is the value written to the record, never a figure; `copy` is its words in the copy table. */
-export type Pill = { readonly id: string; readonly copy?: QuestionCopyKey };
+/**
+ * One answer pill. `id` is the value written to the record, never a figure; `copy` is its words in the copy table; `inLine` is
+ * how it reads inside "I assumed … · Change" where that differs from its label ("No limit" reads "no limit").
+ */
+export type Pill = { readonly id: string; readonly copy?: QuestionCopyKey; readonly inLine?: QuestionCopyKey };
 
 /** A row's pills and the one lit by default (H: ★). At most four pills (A1); "Other" is the field, not a pill. */
 export type PillSet = { readonly pills: readonly Pill[]; readonly lit: string | null };
@@ -38,6 +41,13 @@ export type PillsBy = { readonly by: string; readonly sets: Readonly<Record<stri
 
 /** A value an answer carries to another row (H, "Answered by": e.g. Brief › material answers Elements › source). */
 export type Carry = { readonly key: string; readonly value: string };
+
+/**
+ * A value an earlier row lights on this row's question without answering it (owner, 24 Oct 2026: the Brief's "real" pre-fills
+ * Elements' consent for that person; the tick itself, who, when and an optional file, is still recorded per element when it is
+ * first made, by a person). The engine never writes it: it is read from the record each time the question is shown.
+ */
+export type Prefill = { readonly from: string; readonly values: Readonly<Record<string, string>> };
 
 /** A floor row (H): one decision that must be known before money moves. */
 export type FloorRow = {
@@ -65,6 +75,19 @@ export type FloorRow = {
    * assumption leaves it open (film-record-schema A.0 and question 7: the spend limit never becomes a default).
    */
   readonly personOnly?: true;
+  /**
+   * What "Decide for me" shows on a person-only row instead of writing it: "I assumed <this> · Change", never asked again in the
+   * production, with nothing written (owner, 24 Oct 2026, answer 6). It must be what the row means when unset: the spend limit
+   * shows "no limit", which is what no limit set already means. A person-only row without it stays open after "Decide for me".
+   */
+  readonly decidedShows?: string;
+  /**
+   * What may light a pill on a person-only row without answering it (owner, 24 Oct 2026, answer 5: the engine may propose the
+   * house default for the spend limit, never write one). As ids, beside `answeredBy`.
+   */
+  readonly proposedBy?: readonly string[];
+  /** An earlier row whose value lights this row's pill, never answering it (see `Prefill`). */
+  readonly prefill?: Prefill;
   /** H "Answered by", where the answer is another floor row: pill id → the values it carries. */
   readonly carries?: Readonly<Record<string, readonly Carry[]>>;
   /** D1: what answers it without asking (H's "Answered by" column), as ids. */
@@ -95,9 +118,16 @@ export type Checklist = {
 /**
  * One row's live value in the record, with the workspace it belongs to (rule 2: the engine refuses another workspace's row).
  * `carriedFrom` names the row whose answer carried it here (film-record-schema A.2 `change_reason` `carry:<row>`), so a changed
- * answer there can carry again; a row a person answered has none and is never overwritten by a carry.
+ * answer there can carry again; a row a person answered has none and is never overwritten by a carry. `fromStep` names the step
+ * that row sits on (owner, 24 Oct 2026, answer 8: a carried answer's source is "earlier step", with the step's name).
  */
-export type RecordValue = { readonly workspaceId: string; readonly value: string; readonly source: RowSource; readonly carriedFrom?: string };
+export type RecordValue = {
+  readonly workspaceId: string;
+  readonly value: string;
+  readonly source: RowSource;
+  readonly carriedFrom?: string;
+  readonly fromStep?: string;
+};
 
 /**
  * What is known: the read-only view the film record will satisfy (one live version per key, film-record-schema A.0). Bound to
@@ -126,6 +156,8 @@ export type RecordWrite = {
   readonly source: RowSource | null;
   readonly reason: WriteReason;
   readonly from?: string;
+  /** On a carry: the step of the row it came from (answer 8). */
+  readonly fromStep?: string;
 };
 
 /** One row as the engine marks it. */
@@ -135,6 +167,13 @@ export type MarkedRow = {
   readonly state: RowState;
   readonly value: string | null;
   readonly source: RowSource | null;
+  /** The step a carried value came from (answer 8); null otherwise. */
+  readonly fromStep: string | null;
+  /**
+   * How the row reads in place of a question (R2, G, H), from the copy table: "I assumed … · Change" for an assumed row, "from the
+   * brief · Change" for a known one (a carried one names its step); null for an open row.
+   */
+  readonly line: string | null;
 };
 
 /** A pill as a question shows it: its words and whether it is the lit default. */
@@ -153,3 +192,11 @@ export type Question = {
 
 /** Atomik's picks for "Decide for me", by row key: supplied by the caller, never made here. */
 export type Picks = Readonly<Record<string, string>>;
+
+/**
+ * A workspace's own defaults (owner, 24 Oct 2026, answer 7), by row key: they change which pill is lit (★) and what "Decide for
+ * me" takes when Atomik gives no pick; they answer nothing (H: only a house default, a row the workspace answered the same way
+ * three times, answers a row without asking; it arrives in the record with source `default`). Bound to one workspace (rule 2).
+ * Never applied to a person-only row: a spend limit is a person's alone (rule 14).
+ */
+export type WorkspaceDefaults = { readonly workspaceId: string; readonly values: Readonly<Record<string, string>> };
