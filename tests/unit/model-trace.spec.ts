@@ -12,6 +12,8 @@ import type { AdmissionActor } from "../../lib/admissionTypes";
 import type { CatalogModel } from "../../lib/catalog";
 import type { TenantWorkspace } from "../../lib/tenant";
 import { MODEL_CALL_FILES } from "../helpers/modelCallSites";
+import { LOW, MEDIUM } from "../helpers/thinkingSlots";
+import { DIRECT_MODEL_IDS } from "../../lib/textRoute";
 
 /**
  * Langfuse tracing (lib/modelTrace.ts), run: every listed model call site under ENGINE_MOCK or a scripted model,
@@ -44,7 +46,7 @@ const SYNTHETIC_SECRET = "sk-lf-synthetic-unit-test-secret";
 const OWNER: AdmissionActor = { user: { id: "owner", email: "owner@example.invalid", name: "owner", role: "admin", owner: true, disabled: false, createdAt: 0, lastSeen: null } };
 /** A made-up rate for the fixture writer, not any vendor's price: a run only needs a model with a price. */
 const SYNTHETIC_RATE = { input: "0.00000111", output: "0.00000222" };
-const WRITER: CatalogModel = { id: "anthropic/claude-haiku-4.5", name: "Writer", owner: "anthropic", type: "language", description: "", contextWindow: 100000, maxTokens: 5000, pricing: SYNTHETIC_RATE };
+const WRITER: CatalogModel = { id: LOW, name: "Writer", owner: "anthropic", type: "language", description: "", contextWindow: 100000, maxTokens: 5000, pricing: SYNTHETIC_RATE };
 
 const exporter = new InMemorySpanExporter();
 const META = "langfuse.observation.metadata";
@@ -156,7 +158,7 @@ test("a door with no site around it is still traced, as unattributed; tracing of
 
 /* ── Through the real text door, with a stub transport (no ENGINE_MOCK) ── */
 
-const anthropicReply = (text: string) => ({ id: "msg_fixture", type: "message", role: "assistant", model: "claude-sonnet-5", content: [{ type: "text", text }], stop_reason: "end_turn", stop_sequence: null,
+const anthropicReply = (text: string) => ({ id: "msg_fixture", type: "message", role: "assistant", model: DIRECT_MODEL_IDS[LOW], content: [{ type: "text", text }], stop_reason: "end_turn", stop_sequence: null,
   usage: { input_tokens: 100, cache_creation_input_tokens: 0, cache_read_input_tokens: 60, output_tokens: 25 } });
 async function snapshot(id: string): Promise<CatalogModel> {
   const { snapshotModels } = await import("../../lib/catalog");
@@ -173,7 +175,7 @@ test("the memory read through textPost to a direct vendor: answered with its tok
   process.env.TEXT_DIRECT = "anthropic";
   process.env.ANTHROPIC_API_KEY = "test-anthropic-key-synthetic-never-sent";
   try {
-    const model = await snapshot("anthropic/claude-sonnet-5");
+    const model = await snapshot(LOW);
     const { runMemoryRead } = await import("../../lib/atomikMemoryRead");
     const { textPost } = await import("../../lib/textDirect");
     const via = (respond: () => Response) => ({
@@ -219,7 +221,7 @@ test("a refusal before anything is sent is refused with sent false: TextNotSentE
   try {
     let fetched = 0;
     /* No max_tokens: the direct door refuses it before sending (lib/textDirect.ts directTextRequest). */
-    const body = JSON.stringify({ model: "anthropic/claude-sonnet-5", messages: [{ role: "user", content: PROMPT_CANARY }] });
+    const body = JSON.stringify({ model: LOW, messages: [{ role: "user", content: PROMPT_CANARY }] });
     const reply = await traceModelCall("atomik.ideas", {}, () => textPost(body, { fetch: async () => { fetched++; return new Response("{}"); } }));
     expect(reply.status).toBe(422);
     expect(fetched).toBe(0);
@@ -249,7 +251,7 @@ async function withCatalogue<T>(fn: () => Promise<T>): Promise<T> {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = String(input instanceof Request ? input.url : input);
     if (url.endsWith("/models") && url.includes("ai-gateway.vercel.sh"))
-      return new Response(JSON.stringify({ data: [{ id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6", type: "language", context_window: 200000, max_tokens: 8000,
+      return new Response(JSON.stringify({ data: [{ id: MEDIUM, name: "Claude", type: "language", context_window: 200000, max_tokens: 8000,
         pricing: SYNTHETIC_RATE, modalities: { input: ["text", "image"], output: ["text"] } }] }), { status: 200, headers: { "Content-Type": "application/json" } });
     throw new Error(`Network is forbidden in the trace test: ${url}`);
   }) as typeof fetch;
@@ -309,9 +311,9 @@ function routeModules() {
 }
 
 for (const [site, route, body] of [
-  ["atomik.ideas", "app/api/atomik/ideas/draft/route.ts", { brief: `A calm harbour. ${PROMPT_CANARY}` }],
-  ["atomik.shots", "app/api/atomik/shots/draft/route.ts", { projectId: "p1", scene: 1 }],
-  ["atomik.treatment_scene", "app/api/atomik/treatment/scene/route.ts", { projectId: "p1", n: 1, note: PROMPT_CANARY }],
+  ["atomik.ideas", "app/api/atomik/ideas/draft/route.ts", { brief: `A calm harbour. ${PROMPT_CANARY}`, maxCredits: 1000 }],
+  ["atomik.shots", "app/api/atomik/shots/draft/route.ts", { projectId: "p1", scene: 1, maxCredits: 1000 }],
+  ["atomik.treatment_scene", "app/api/atomik/treatment/scene/route.ts", { projectId: "p1", n: 1, note: PROMPT_CANARY, maxCredits: 1000 }],
 ] as const) test(`${site}: the route's paid-text job is its site`, async () => {
   await inWorkspace(async (ws) => {
     const { POST } = load<{ POST: Handler }>(route, routeModules());
@@ -390,7 +392,7 @@ function testWorkspace(): TenantWorkspace {
     gatewayKeyId: null, ownerId: "owner", createdAt: 0, suspendedAt: null, suspendedReason: null,
     flaggedAt: null, flagNote: null, concurrency: 3, rendersPerHour: 30, storageQuotaBytes: null, deletedAt: null } as TenantWorkspace;
 }
-const DEV_MODEL: CatalogModel = { id: "anthropic/claude-sonnet-4.6", name: "Claude", owner: "anthropic", type: "language", inputModalities: ["text", "image"], description: "", contextWindow: 200000, maxTokens: 8192, pricing: { input: "0.0000001", output: "0.0000003" } };
+const DEV_MODEL: CatalogModel = { id: MEDIUM, name: "Claude", owner: "anthropic", type: "language", inputModalities: ["text", "image"], description: "", contextWindow: 200000, maxTokens: 8192, pricing: { input: "0.0000001", output: "0.0000003" } };
 
 test("atomik.development: one call per phase, step = kind and stage", async () => {
   const { runInTenant } = await import("../../lib/tenant");
@@ -461,6 +463,8 @@ test("crew.round: one call per member and phase", async () => {
   const { DEFAULT_CONTEXT } = await import("../../lib/crew/room");
   const { runRound, quoteRound } = await import("../../lib/crew/round");
   const { newProject } = await import("../../lib/workbench/studio");
+  /* Crew's model, as the deployment names it (lib/crew/xai.ts), read here rather than written down. */
+  const crewModel = (await import("../../lib/crew/xai")).xaiModel();
   await platformReady();
   const id = `crew_trace_${randomUUID().slice(0, 8)}`, owner = `owner_${id}`;
   await platformDb().batch([
@@ -472,7 +476,7 @@ test("crew.round: one call per member and phase", async () => {
   const workspace = (await getWorkspace(id)) as TenantWorkspace;
   await runInTenant(workspace, async () => {
     await listMembers(owner, "trace-project");
-    const session = await createSession(owner, { projectId: "trace-project", goal: `Find the ending ${PROMPT_CANARY}`, context: DEFAULT_CONTEXT, model: "grok-4.6" });
+    const session = await createSession(owner, { projectId: "trace-project", goal: `Find the ending ${PROMPT_CANARY}`, context: DEFAULT_CONTEXT, model: crewModel });
     expect(await claimRound(owner, session.id, 1)).toBe(true);
     const active = (await listMembers(owner, "trace-project")).slice(0, 2).map((m, i) => ({ ...m, isChair: i === 0 }));
     const project = { ...newProject("Trace"), brief: PROMPT_CANARY };
@@ -482,7 +486,7 @@ test("crew.round: one call per member and phase", async () => {
     const traced = await expectCalls("crew.round", "answered", { workspace: id });
     expect(traced.length).toBeGreaterThanOrEqual(3);
     for (const c of traced) {
-      expect(c.meta).toMatchObject({ chat_id: session.id, model: "grok-4.6", sent: true });
+      expect(c.meta).toMatchObject({ chat_id: session.id, model: crewModel, sent: true });
       expect(Number(c.meta.vendor_cost_usd)).toBeGreaterThan(0);
     }
     expect(new Set(traced.map((c) => c.meta.step))).toEqual(new Set(["propose", "challenge", "converge"]));

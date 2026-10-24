@@ -1,11 +1,12 @@
 import { consentLive, consentSummary, type ConsentRecord } from "./consent-words";
 
 /**
- * What the Cast card for a character says about its identity and its consent (Gaps A, Identity frames: consent not
- * recorded, consent on file, training, ready, failed). Pure: the card and the tests read the same answer.
+ * What the Cast card for a character says about its identity and its consent tick (Gaps A, Identity frames: not
+ * ticked, ticked, training, ready, failed). Pure: the card and the tests read the same answer.
  *
- * Only what is recorded is said:
- * - the consent is the cast member's newest record (a live one first);
+ * A tick, not a gate (owner, 23 Oct 2026): training is offered whether or not the consent is ticked; the tick is only
+ * recorded and shown. Only what is recorded is said:
+ * - the consent is the cast member's newest tick (a live one first);
  * - the identity is the one the card renders with, else the one a training request citing the consent started;
  * - training shows no percentage or time left: the trainer reports none (an indeterminate bar, lead decision 20);
  * - a failed training says "Nothing billed" only when the ledger shows nothing was billed for it, the charge when it
@@ -13,7 +14,12 @@ import { consentLive, consentSummary, type ConsentRecord } from "./consent-words
  */
 export type IdentityLike = { id: string; name: string; status: "submitting" | "training" | "ready" | "failed" | "uncertain"; creditsBilled: number | null; error: string | null; createdAt: number };
 
-export type IdentityStage = "no-consent" | "recorded" | "training" | "ready" | "failed";
+/* "review": a training whose submission is uncertain. Nothing is offered to press again until it is reconciled. */
+/* "sent": a training was sent from this production and its reply was not read here (the person left the production while
+   it was out); the request is saved, and Recover asks about that same request, never sending it twice. */
+/* "started": a training started from this card that couldn't be attached to it (its card was renamed since the press):
+   kept parked, and said in words; never a Train press for it again. */
+export type IdentityStage = "no-consent" | "recorded" | "training" | "ready" | "failed" | "review" | "sent" | "started" | "unread";
 export type Tone = "done" | "working" | "waiting" | "idle";
 
 export type IdentityCardView = {
@@ -21,21 +27,35 @@ export type IdentityCardView = {
   /** The state line on the card. */
   text: string;
   tone: Tone;
-  /** The consent line: the record in words, or why there is none. */
+  /** The consent line: the tick in words, or that there is none. */
   consent: string;
-  /** The live record a training request cites; null when there is none. */
+  /** The live tick a training request cites; null when there is none (training is offered all the same). */
   consentId: string | null;
   /** What a failed training was billed, in words; null when not failed. */
   billed: string | null;
   /** Why it failed, as the trainer said; null when it did not say. */
   why: string | null;
   identity: IdentityLike | null;
+  /**
+   * A training started from this card and held for it (its card was renamed since the press): the name it was started
+   * for, and, once that training is ready or has failed, its outcome in words (with the charge on a failure, rule 14).
+   * The card then offers Attach or Not this card; it is held (no Train) only until the outcome is known.
+   */
+  held: { name: string; outcome: string | null; ready: boolean } | null;
 };
 
 /** The record that speaks for a cast member: the newest live one, else the newest of any. */
 export function currentConsent(records: readonly ConsentRecord[], subjectKey: string, at = Date.now()): ConsentRecord | null {
   const mine = records.filter((r) => r.subjectKey === subjectKey).sort((a, b) => b.recordedAt - a.recordedAt);
   return mine.find((r) => consentLive(r, at)) ?? mine[0] ?? null;
+}
+
+/**
+ * The reading person's own live ticks for a cast member, newest first. Each person's "Consent given" is their own:
+ * another member may tick beside a live tick that isn't theirs, and unticking withdraws only their own.
+ */
+export function ownLiveTicks(records: readonly ConsentRecord[], subjectKey: string, at = Date.now()): ConsentRecord[] {
+  return records.filter((r) => r.subjectKey === subjectKey && r.mine && consentLive(r, at)).sort((a, b) => b.recordedAt - a.recordedAt);
 }
 
 /** "Nothing billed", "Billed 54 cr" or "Charge not confirmed yet", from the ledger's figure for this training. */
@@ -53,27 +73,40 @@ export function identityCardView(input: {
   identities: readonly IdentityLike[] | null;
   /** The consent an identity trained before records existed carries ("Training consent confirmed … by …"), if any. */
   earlier?: string | null;
+  /** The consent ticks or the identities could not be read: the card says so, and offers no training it can't place. */
+  readFailed?: boolean;
+  /** A training request from this production is saved with its reply unread: the card offers Recover, never Train. */
+  requestSaved?: boolean;
+  /** A training started from this card is held for it, under the name it was started for (the card was renamed since), with that training as listed. */
+  held?: { name: string; identity: IdentityLike | null } | null;
   at?: number;
 }): IdentityCardView {
   const at = input.at ?? Date.now();
   const consent = currentConsent(input.consents, input.subjectKey, at);
-  const holding = consent && consentLive(consent, at) ? consent : null;
-  /* Training cites only a record that covers the face and allows identity training (the server checks the same). */
-  const live = holding && holding.face && holding.uses.includes("identity") ? holding : null;
+  /* Any live tick is cited: what it covers and the uses are optional notes for the lawyer, never a condition. */
+  const live = consent && consentLive(consent, at) ? consent : null;
   const started = consent?.identityId ? input.identities?.find((i) => i.id === consent.identityId) ?? null : null;
   const identity = input.bound ?? started;
-  const consentLine = consent ? consentSummary(consent, at) : input.earlier ?? "Not recorded yet. Only a person records it.";
-  const base = { consent: consentLine, consentId: live?.id ?? null, billed: null, why: null, identity };
+  const consentLine = consent ? consentSummary(consent, at) : input.earlier ?? "Not ticked. Only a person ticks it.";
+  const h = input.held ?? null;
+  const name = h?.name || "this cast member";
+  const outcome = h?.identity?.status === "ready" ? `Identity ready for ${name}`
+    : h?.identity?.status === "failed" ? `Training for ${name} failed · ${billedWords(h.identity.creditsBilled)}` : null;
+  const held = h ? { name, outcome, ready: h.identity?.status === "ready" } : null;
+  const base = { consent: consentLine, consentId: live?.id ?? null, billed: null, why: null, identity, held };
   if (identity?.status === "ready") return { ...base, stage: "ready", text: `Identity ready · ${identity.name}`, tone: "done" };
   if (identity?.status === "submitting" || identity?.status === "training") return { ...base, stage: "training", text: "Training", tone: "working" };
   if (identity?.status === "failed" || identity?.status === "uncertain") {
     return {
-      ...base, stage: "failed", tone: "waiting",
+      ...base, stage: identity.status === "uncertain" ? "review" : "failed", tone: "waiting",
       text: identity.status === "uncertain" ? "Training needs review" : "Training failed",
       billed: billedWords(identity.creditsBilled), why: identity.error,
     };
   }
-  if (live) return { ...base, stage: "recorded", text: "Consent recorded · ready to train", tone: "idle" };
-  if (holding) return { ...base, stage: "no-consent", text: "Consent doesn't allow identity training", tone: "waiting" };
-  return { ...base, stage: "no-consent", text: "Consent not recorded", tone: "waiting" };
+  if (input.readFailed) return { ...base, stage: "unread", text: "Couldn't read this · reload", tone: "waiting" };
+  if (input.requestSaved) return { ...base, stage: "sent", text: "Training sent · reply not read yet", tone: "waiting" };
+  /* Held only until its outcome is known: then the card is free to train again, and says the outcome beside. */
+  if (held && !outcome) return { ...base, stage: "started", text: `Training started for ${name}`, tone: "waiting" };
+  if (live) return { ...base, stage: "recorded", text: "Consent ticked · ready to train", tone: "idle" };
+  return { ...base, stage: "no-consent", text: "No identity yet", tone: "idle" };
 }

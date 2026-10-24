@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { GEMINI_IDS, LOW, OPENAI_IDS } from "../helpers/thinkingSlots";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -237,7 +238,8 @@ test("the brand kit's lines are offered to pick; each picked line lands as an or
 
 /* ── Atomik reads a paste: paid, priced first, kept only when ticked ─── */
 
-const READER: CatalogModel = { id: "anthropic/claude-sonnet-5.5", name: "Reader", owner: "anthropic", type: "language", description: "", contextWindow: 200000, maxTokens: 8192,
+/* The reader is the Low slot's model (tests/helpers/thinkingSlots): the memory read is a routine turn. */
+const READER: CatalogModel = { id: LOW, name: "Reader", owner: "anthropic", type: "language", description: "", contextWindow: 200000, maxTokens: 8192,
   pricing: { input: "0.00003", output: "0.00015" } };
 const PASTE = ["- Brand colours are teal and warm sand", "- Our audience is skaters in coastal towns", "- Packs are $49 each", "- A premium price point, never discount-led", "- Always end on the board"].join("\n");
 /** A provider's reply: the proposals as `content`, at `cost`. */
@@ -336,19 +338,29 @@ test("a read that answers with nothing to keep is refused and charges nothing; o
   });
 });
 
-test("the read route: Atomik's models only, the approved price required, a lost reply recovered without a second read, and API tokens refused", async () => {
+test("the read route: Atomik's thinking only (a routine turn), the approved price required, a lost reply recovered without a second read, and API tokens refused", async () => {
   const read = await import("../../lib/atomikMemoryRead");
-  const { selectAtomikModel } = await import("../../lib/atomikModelPolicy");
+  const { selectAtomikThinking, THINKING_UNAVAILABLE } = await import("../../lib/atomikModelPolicy");
   const { engineFor } = await import("../../lib/engines");
   const { PaidTextError } = await import("../../lib/paidText");
-  const available = [READER.id, "google/gemini-3.1-pro-preview", "openai/gpt-5.5", "meta/llama-4"];
+  const available = [READER.id, GEMINI_IDS[0], OPENAI_IDS[0], "test/unlisted-model"];
   let sent = 0;
+  const quotedWith: string[] = [];
   const extra = {
-    /* lib/atomik › resolveModel, against a fixed catalogue: Atomik's model policy decides, as it does in the route. */
-    "@/lib/atomik": { resolveModel: async (want: string) => { try { return selectAtomikModel(want, available); } catch (error) { throw new PaidTextError((error as Error).message, 400); } } },
+    /* lib/atomik › resolveModel, against a fixed catalogue: Atomik's thinking policy decides (the default setting), as it does in the route; what was sent is not asked. */
+    "@/lib/atomik": { resolveModel: async (_sent: string, turn: "routine") => {
+      const pick = selectAtomikThinking("medium", turn, available.map((id) => ({ ...READER, id })));
+      if (!pick) throw new PaidTextError(THINKING_UNAVAILABLE, 503);
+      return pick.model;
+    } },
+    /* lib/atomikThinking › thinkingRun, against the same fixed catalogue: the reader offers no effort control, so none is sent. */
+    "@/lib/atomikThinking": { thinkingRun: async (turn: "routine", ran: string) => {
+      const pick = selectAtomikThinking("medium", turn, available.map((id) => ({ ...READER, id })));
+      return pick?.model === ran ? { ours: true, ...(pick.effort ? { effort: pick.effort } : {}) } : { ours: false };
+    } },
     /* The real read, priced on a fixed model and answered by the mock engine (ENGINE_MOCK=1): no provider is called. */
     "@/lib/atomikMemoryRead": { ...read,
-      quoteMemoryRead: (input: { text: string; model: string }) => read.quoteMemoryRead(input, { ...READER, id: input.model }),
+      quoteMemoryRead: (input: { text: string; model: string }) => { quotedWith.push(input.model); return read.quoteMemoryRead(input, { ...READER, id: input.model }); },
       runMemoryRead: (input: Parameters<typeof read.runMemoryRead>[0]) => read.runMemoryRead(input, { model: { ...READER, id: input.model }, submit: (request) => { sent++; return engineFor("vercel").run!(request); } }) },
   };
   await withCredits(async (ws) => {
@@ -359,13 +371,17 @@ test("the read route: Atomik's models only, the approved price required, a lost 
     /* The quote is credits only for a workspace on credits. */
     const quoted = await post({ text: PASTE, quoteOnly: true });
     expect(quoted.status).toBe(200);
-    const quote = (await quoted.json()) as { model: string; estimateCredits: number; estimateUsd?: number };
-    expect(quote.model).toBe(READER.id);
+    const quote = (await quoted.json()) as { model?: string; estimateCredits: number; estimateUsd?: number };
+    /* The model that reads is quoted on the server and never sent (Amendment (iii) §E). */
+    expect(quote).not.toHaveProperty("model");
+    expect(quotedWith.at(-1)).toBe(READER.id);
     expect(quote.estimateUsd).toBeUndefined();
-    /* Claude, OpenAI or Grok only: Gemini and any other family are refused with the reason. */
-    expect((await (await post({ text: PASTE, model: "google/gemini-3.1-pro-preview", quoteOnly: true })).json()).error).toContain("no longer offered in Atomik");
-    expect((await post({ text: PASTE, model: "meta/llama-4", quoteOnly: true })).status).toBe(400);
-    expect((await (await post({ text: PASTE, model: "openai/gpt-5.5", quoteOnly: true })).json()).model).toBe("openai/gpt-5.5");
+    /* A model in the body is not a choice (owner, 22 Oct 2026): Gemini, another family or OpenAI is ignored, never refused, and the routine turn's model is quoted. */
+    for (const model of [GEMINI_IDS[0], "test/unlisted-model", OPENAI_IDS[0]]) {
+      const asked = await post({ text: PASTE, model, quoteOnly: true });
+      expect(asked.status, model).toBe(200);
+      expect(quotedWith.at(-1), model).toBe(READER.id);
+    }
     /* Never without the approved price. */
     const unpriced = await post({ text: PASTE, model: quote.model }, { "Idempotency-Key": "memory-read-unpriced" });
     expect(unpriced.status).toBe(409);

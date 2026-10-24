@@ -8,7 +8,6 @@ import { useShell } from "@/lib/shell/state";
 import { useIdentities } from "@/lib/workspace/identities";
 import { usePaidAction } from "@/lib/usePaidAction";
 import { useScopedFetch } from "@/lib/useScopedFetch";
-import { thinkingModelName } from "@/components/atomik/ModelPicker";
 import {
   IMPORT_FROM, MEMORY_KIND_LABEL, MEMORY_KINDS, MEMORY_LIMITS, REF_SOURCE_LABEL, TEXT_KINDS, amountRefusal, brandKitPicks, castRef, mentionsMoney, refSource, soulRef,
   type BrandKitPick, type ImportFrom, type ImportedEntry, type MemoryKind, type MemoryView as Entry,
@@ -506,7 +505,8 @@ function ImportMemory({ api, scope, projectId, entries, onImported }: { api: Mem
   );
 }
 
-type ReadQuote = { model: string; estimateCredits: number; estimateUsd?: number };
+/* The price only: the model that reads is Atomik's thinking, kept on the server (Amendment (iii) §E). */
+type ReadQuote = { estimateCredits: number; estimateUsd?: number };
 type ReadReply = { id: string; model: string; entries: ImportedEntry[]; skipped: KeepReply["skipped"]; credits?: number | null; costUsd?: number };
 const READ_URL = "/api/atomik/memory/read";
 
@@ -550,7 +550,7 @@ export function AtomikRead({ scope, api, text, projectId, place, entries, open, 
       try {
         const response = await scoped(READ_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, quoteOnly: true }), signal: controller.signal, cache: "no-store" });
         const value = (await response.json().catch(() => null)) as (ReadQuote & { error?: string }) | null;
-        if (!response.ok || !value || typeof value.model !== "string" || !Number.isInteger(value.estimateCredits)) throw new Error(value?.error || "The price could not be read.");
+        if (!response.ok || !value || !Number.isInteger(value.estimateCredits)) throw new Error(value?.error || "The price could not be read.");
         if (!controller.signal.aborted) setQuote({ key: quoteKey, value });
       } catch (error) {
         if (!controller.signal.aborted) setQuote({ key: quoteKey, error: failed(error, "The price could not be read.") });
@@ -570,7 +570,7 @@ export function AtomikRead({ scope, api, text, projectId, place, entries, open, 
   const start = () => {
     const value = shownQuote?.value;
     if (!value || phase !== "idle") return;
-    void runRead({ ...body, model: value.model, maxCredits: value.estimateCredits });
+    void runRead({ ...body, maxCredits: value.estimateCredits });
   };
   const recover = () => { if (pending && phase === "idle") void runRead(JSON.parse(pending.body) as Record<string, unknown>); };
   const finish = async () => {
@@ -643,7 +643,7 @@ export function AtomikRead({ scope, api, text, projectId, place, entries, open, 
       ) : (
         <>
           <h3 className="am-read-title">Read with Atomik</h3>
-          <p className="tc-note">Atomik reads the text above{shownQuote?.value ? ` with ${thinkingModelName(shownQuote.value.model)}` : ""} and proposes entries for you to tick. Nothing is kept until you tick it.</p>
+          <p className="tc-note">Atomik reads the text above and proposes entries for you to tick. Nothing is kept until you tick it.</p>
           {shownQuote?.value ? (
             <p className="tc-note" data-testid="memory-read-estimate">{newWords
               ? <>{quoted(shownQuote.value.estimateCredits, shownQuote.value.estimateUsd)} · charged what the read actually costs, never more.</>

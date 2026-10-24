@@ -449,8 +449,9 @@ export const PLANS: Record<WorkspacePageId, Plan> = {
             ctx,
             `/api/workbench/development?projectId=${encodeURIComponent(ctx.projectId ?? "")}`,
           );
-          const model = ctx.request?.development?.model ?? data.models[0]?.id;
-          if (!data.configured || !model) throw new Error("Script development isn't set up in this workspace.");
+          /* The server names no thinking model (never disclosed) and runs the Thinking setting's whatever is sent. */
+          const model = ctx.request?.development?.model ?? "auto";
+          if (!data.configured) throw new Error("Script development isn't set up in this workspace.");
           return { io: { developmentModel: model, developmentRequestId: newId(ctx) } };
         }),
       ),

@@ -120,8 +120,11 @@ export const ANSWER_AFTER_MS = 25_000;
  * `fencedBy`: the key of another claim of the same person whose existence sets this request aside (a cancelled press, lib/batchPress.ts).
  * It is checked in the same statement that writes this claim, so a fence written before the claim always stops it: the claim is then
  * written complete and set aside, and nothing is run, reserved or sent.
+ *
+ * `admit`: a read-only check asked only of a NEW request, before its claim is written. A response from it is the answer, and nothing
+ * is written; a request whose key already has a claim (a retry) is answered by that claim as always, whatever `admit` would say.
  */
-export type GenerationRequestOptions = { atomicBinding?: boolean; answerAfterMs?: number; afterReply?: (work: () => Promise<unknown>) => void; fencedBy?: string };
+export type GenerationRequestOptions = { atomicBinding?: boolean; answerAfterMs?: number; afterReply?: (work: () => Promise<unknown>) => void; fencedBy?: string; admit?: () => Promise<Response | null> };
 
 const STILL_ACCEPTING = "This request is still being accepted. Retry with the same Idempotency-Key; it will not submit another generation.";
 /** The answer for a claim whose run has not finished: not final, so the client keeps the request and asks again. */
@@ -221,6 +224,11 @@ export async function withGenerationRequestData(
   const { userId, key, fingerprint } = input;
   if (!/^[A-Za-z0-9._:-]{8,160}$/.test(key)) return Response.json({ error: "The request key is invalid." }, { status: 400 });
   await generationRequestsReady();
+  /* A new request only: a retry under a key that already has a claim gets that claim's answer below. */
+  if (options.admit && !(await db().execute({ sql: `SELECT 1 FROM generation_requests WHERE user_id=? AND request_key=?`, args: [userId, key] })).rows.length) {
+    const refused = await options.admit();
+    if (refused) return refused;
+  }
   const inserted = await db().execute(options.fencedBy
     ? {
         /* One statement: the claim is written only while its fence does not exist. */

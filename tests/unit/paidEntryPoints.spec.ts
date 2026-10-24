@@ -1,9 +1,11 @@
 import { test, expect } from "@playwright/test";
+import { OPENAI_IDS } from "../helpers/thinkingSlots";
+import { ASTRA, EFFORT_CLAUDE } from "../helpers/runtimeIds";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CatalogModel } from "../../lib/catalog";
-import type { TenantWorkspace } from "../../lib/tenant";
+import type { TenantUser, TenantWorkspace } from "../../lib/tenant";
 
 const dir = mkdtempSync(path.join(tmpdir(), "particl-paid-entry-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -19,8 +21,19 @@ const model: CatalogModel = {
   description: "",
   contextWindow: 100000,
   maxTokens: 5000,
-  pricing: { input: "0.000001", output: "0.000002" },
+  pricing: { input: "0.0000013", output: "0.0000029" },
 };
+
+/** The figures in a fixture's pricing that some catalogue entry also has, at any depth (tiers, regions, service tiers included).
+    No fixture in this file may state a vendor's rate (owner, 23 Oct 2026): each is checked to have none. */
+async function vendorRatesIn(pricing: unknown): Promise<number[]> {
+  const { snapshotModels } = await import("../../lib/catalog");
+  const figures = (value: unknown): number[] =>
+    value && typeof value === "object" ? Object.values(value as Record<string, unknown>).flatMap(figures)
+      : Number.isFinite(Number(value)) && Number(value) > 0 && Number(value) < 1 ? [Number(value)] : [];
+  const listed = new Set(snapshotModels().flatMap((m) => figures(m.pricing)));
+  return figures(pricing).filter((n) => listed.has(n));
+}
 
 function workspace(name: string): TenantWorkspace {
   return {
@@ -46,6 +59,9 @@ function workspace(name: string): TenantWorkspace {
     deletedAt: null,
   };
 }
+/* Training is a person's priced press (rule 11; lib/identities.ts › startTraining refuses anyone else): the training
+   scopes run as the signed-in person who presses it. */
+const PRESSER: TenantUser = { id: "test_user", email: "test@example.test", name: "Test", role: "member", owner: false, disabled: false, lastSeen: null, createdAt: 0 };
 async function scope<T>(
   name: string,
   fn: () => Promise<T>,
@@ -63,7 +79,7 @@ async function scope<T>(
   return runInTenant(ws, async () => {
     await ready();
     return fn();
-  });
+  }, name.startsWith("training_") ? { user: PRESSER } : {});
 }
 async function metered(name: string) {
   const { platformDb } = await import("../../lib/platform");
@@ -157,14 +173,18 @@ test("an empty answer is paid to the provider but settles at zero, like a refuse
 
 test("a settled answer reports what the ledger billed, in credits", async () =>
   scope("text_credits", async () => {
-    const { runPaidText } = await import("../../lib/paidText");
+    const { runPaidText, quotePaidText } = await import("../../lib/paidText");
+    const { billCredits } = await import("../../lib/creditTerms");
+    const quote = await quotePaidText(call, model);
     const out = await runPaidText(call, {
       model,
       submit: async () => ({ ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: "A usable logline." } }], usage: { cost: 0.4 } }) }),
     });
     const event = (await metered("text_credits"))[0];
-    expect(Number(event.billed_credits)).toBe(6);
-    expect(out.credits).toBe(6);
+    /* What the ledger billed: what it used, never past its estimate (money review 3, 23 Oct 2026). The provider's 0.4 is above this fixture's estimate, so it bills the estimate. */
+    expect(billCredits(0.4, "text")).toBeGreaterThan(quote.estimateCredits);
+    expect(Number(event.billed_credits)).toBe(quote.estimateCredits);
+    expect(out.credits).toBe(quote.estimateCredits);
     expect(out.costUsd).toBeCloseTo(0.4, 6);
   }));
 
@@ -525,7 +545,7 @@ test("legacy reasoning quotes are read-only and the paid request reserves the qu
     const { quotePaidText, runPaidText } = await import("../../lib/paidText");
     const { db } = await import("../../lib/db");
     const thinking: CatalogModel = {
-      ...model, id: "anthropic/claude-sonnet-4.6", owner: "anthropic", maxTokens: 32768,
+      ...model, id: EFFORT_CLAUDE, owner: "anthropic", maxTokens: 32768,
       tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["low", "medium", "high"] }],
     };
     const request = { ...call, id: "quoted_reasoning", model: thinking.id, effort: "high" };
@@ -582,7 +602,7 @@ test("legacy invalid efforts and incompatible image references fail before a pai
 test("an older text request without effort keeps its original output limit and wire fields", async () =>
   scope("text_old_effort", async () => {
     const { runPaidText } = await import("../../lib/paidText");
-    const thinking: CatalogModel = { ...model, id: "anthropic/claude-sonnet-4.6", owner: "anthropic", maxTokens: 32768,
+    const thinking: CatalogModel = { ...model, id: EFFORT_CLAUDE, owner: "anthropic", maxTokens: 32768,
       tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["low", "medium", "high"] }] };
     const { createChat, getChat } = await import("../../lib/atomik");
     const chatId = await createChat({ userId: "test_user", projectId: null, model: thinking.id, agentMode: "ask" });
@@ -601,8 +621,9 @@ test("an older text request without effort keeps its original output limit and w
 test("premium reasoning is available within its explicit quote while old unquoted text retains its budget", async () =>
   scope("text_premium_quote", async () => {
     const { quotePaidText, runPaidText } = await import("../../lib/paidText");
-    const premium: CatalogModel = { ...model, id: "openai/gpt-5.5-pro", owner: "openai", maxTokens: 32768,
-      pricing: { input: "0.00003", output: "0.0003" }, tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["high"] }] };
+    const premium: CatalogModel = { ...model, id: OPENAI_IDS[0], owner: "openai", maxTokens: 32768,
+      pricing: { input: "0.0000301", output: "0.000293" }, tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["high"] }] };
+    expect(await vendorRatesIn(premium.pricing)).toEqual([]);
     const request = { ...call, model: premium.id, effort: "high", maxTokens: 4000 };
     const quote = await quotePaidText(request, premium);
     expect(quote.estimateUsd).toBeGreaterThan(1);
@@ -619,7 +640,8 @@ test('legacy direct OpenAI saves cache receipts and price snapshot, retaining un
   try { for (const unknown of [false, true]) await scope(`direct_cache_${unknown}`, async () => {
     const { runPaidText } = await import('../../lib/paidText');
     const { db } = await import('../../lib/db');
-    const priced: CatalogModel = { ...model, id: 'openai/gpt-6-astra', owner: 'openai', pricing: { input: .0000001, output: .0000003, input_cache_read: .00000001, input_cache_write: .000000125 } };
+    const priced: CatalogModel = { ...model, id: ASTRA, owner: 'openai', pricing: { input: .000000117, output: .00000037, input_cache_read: .000000013, input_cache_write: .000000159 } };
+    expect(await vendorRatesIn(priced.pricing)).toEqual([]);
     let calls = 0;
     const input = { ...call, model: priced.id, id: `direct-cache-${unknown}` };
     const submit = async (request: { body: string }) => {
@@ -627,7 +649,7 @@ test('legacy direct OpenAI saves cache receipts and price snapshot, retaining un
       return { ok: true, status: 200, text: JSON.stringify({ choices: [{ message: { content: 'Saved paid answer.' } }], usage: { prompt_tokens: 100, completion_tokens: 20, prompt_tokens_details: { cached_tokens: 30, ...(unknown ? {} : { cache_write_tokens: 40 }) }, completion_tokens_details: { reasoning_tokens: 10 } } }) };
     };
     if (unknown) await expect(runPaidText(input, { model: priced, submit })).rejects.toThrow('retained for review');
-    else expect((await runPaidText(input, { model: priced, submit })).costUsd).toBeCloseTo(30 * .0000001 + 30 * .00000001 + 40 * .000000125 + 20 * .0000003, 12);
+    else expect((await runPaidText(input, { model: priced, submit })).costUsd).toBeCloseTo(30 * .000000117 + 30 * .000000013 + 40 * .000000159 + 20 * .00000037, 12);
     await expect(runPaidText(input, { model: priced, submit })).rejects.toThrow('already has a paid claim');
     expect(calls).toBe(1);
     const saved = (await db().execute({ sql: 'SELECT * FROM paid_text_jobs WHERE id=?', args: [input.id] })).rows[0];
@@ -649,12 +671,13 @@ test("a TEXT_DIRECT model is quoted at its cold cache ceiling and settled from i
     const saved = { mock: process.env.ENGINE_MOCK, direct: process.env.TEXT_DIRECT, key: process.env.ANTHROPIC_API_KEY };
     delete process.env.ENGINE_MOCK; process.env.ANTHROPIC_API_KEY = "test-anthropic-key-never-sent";
     try {
-      const claude: CatalogModel = { ...model, id: "anthropic/claude-sonnet-4.6", owner: "anthropic", pricing: { input: .000003, output: .000015, input_cache_read: .0000003, input_cache_write: .00000375 } };
+      const claude: CatalogModel = { ...model, id: EFFORT_CLAUDE, owner: "anthropic", pricing: { input: .0000017, output: .0000083, input_cache_read: .00000017, input_cache_write: .0000021 } }; // made-up rates: no catalogue entry has them (asserted below)
+      expect(await vendorRatesIn(claude.pricing)).toEqual([]);
       const direct = { ...call, model: claude.id, id: "text_direct_billed" };
       const gatewayQuote = await quotePaidText(direct, claude);
       process.env.TEXT_DIRECT = "anthropic";
       const quote = await quotePaidText(direct, claude);
-      // A cold cache write (1.25× input) is the most a direct Claude call can cost.
+      // A cold cache write is the most a direct Claude call can cost.
       expect(quote.estimateUsd!).toBeGreaterThan(gatewayQuote.estimateUsd!);
       let calls = 0;
       const submit = async (request: { body: string }) => {
@@ -663,7 +686,7 @@ test("a TEXT_DIRECT model is quoted at its cold cache ceiling and settled from i
           usage: { prompt_tokens: 200, completion_tokens: 25, prompt_tokens_details: { cached_tokens: 60, cache_write_tokens: 40 } } }) };
       };
       const result = await runPaidText(direct, { model: claude, submit });
-      const usd = 100 * .000003 + 60 * .0000003 + 40 * .00000375 + 25 * .000015;
+      const usd = 100 * .0000017 + 60 * .00000017 + 40 * .0000021 + 25 * .0000083;
       expect(calls).toBe(1);
       expect(result.costUsd).toBeCloseTo(usd, 15);
       expect(quote.estimateUsd!).toBeGreaterThanOrEqual(result.costUsd);
@@ -675,3 +698,7 @@ test("a TEXT_DIRECT model is quoted at its cold cache ceiling and settled from i
       for (const [name, value] of [["ENGINE_MOCK", saved.mock], ["TEXT_DIRECT", saved.direct], ["ANTHROPIC_API_KEY", saved.key]] as const) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
     }
   }));
+
+test("no fixture in this file states a vendor's rate", async () => {
+  expect(await vendorRatesIn(model.pricing)).toEqual([]);
+});

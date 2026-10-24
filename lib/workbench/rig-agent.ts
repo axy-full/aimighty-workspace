@@ -36,6 +36,8 @@ import {
   mockPlannerModel, plannerCeilingUsd, plannerCostUsd, PlannerError, runPlanner, selectPlannerModel,
   MOCK_PLANNER_CATALOG, MOCK_PLANNER_MODEL, NO_ATTACHMENT_CONTENT, PLANNER_TIMEOUT_MS, type PlannerAttachmentContent, type PlannerOutcome,
 } from "./rig-agent-planner";
+import { THINKING_UNAVAILABLE, selectAtomikThinking } from "../atomikModelPolicy";
+import { workspaceThinking } from "../atomikThinking";
 import { attachedOf, loadPlanAttachmentContent, PlanAttachmentError, resolvePlanAttachments, type AttachmentReaders, type PlanAttachment } from "./rig-agent-attachments";
 import { suggestedRunLimit } from "./rig-agent-limits";
 import { advancePaidSteps, closeEndedSteps, MAX_SEND_ATTEMPTS, RIG_AGENT_VERIFY, stepTitle, STOPPED_UNSENT, VERIFY_LATER, type PaidDeps } from "./rig-agent-runs";
@@ -421,6 +423,8 @@ export async function askRigAgent(input: { productionId: string; draftId: string
   /* The sample workspace refuses every ask (lib/demo/spend-guard.server.ts) save the one its mark is lifted for: the
      run this ask makes becomes the one run the lift covers, in this same write, or nothing is written. */
   const sampleMarked = (await sampleWorkspaceRefusal()) !== null;
+  /* Atomik's thinking connected before the run row is written: an empty slot is refused with nothing written, nothing billed (a retry of a run already made still finds it). */
+  const thinkingOff = await plannerPrice(input.model ?? "auto").then(() => false, (error: unknown) => error instanceof PlannerError && error.message === THINKING_UNAVAILABLE);
   const at = now();
   const run = await workbenchTransaction(async (tx) => {
     const again = await runByRequest(tx, input.userId, input.requestId);
@@ -428,6 +432,7 @@ export async function askRigAgent(input: { productionId: string; draftId: string
       if (again.productionId !== input.productionId) throw new RigAgentError("That request was for another production.", 409);
       return again;
     }
+    if (thinkingOff) throw new RigAgentError(THINKING_UNAVAILABLE, 503);
     const recent = Number((await tx.execute({ sql: "SELECT COUNT(*) AS n FROM rig_agent_runs WHERE owner=? AND created_at>?", args: [input.userId, at - 3_600_000] })).rows[0].n);
     if (recent >= PLANS_PER_HOUR) throw new RigAgentError(`You have asked Atomik for ${PLANS_PER_HOUR} boards in the last hour. Try again in a little while.`, 429);
     const active = await activeRun(tx, input.productionId);
@@ -1111,14 +1116,23 @@ async function releasePlanning(run: Pick<RunRow, "id" | "productionId" | "owner"
   await patchRun(db(), run.id, { plan_charge: "released" });
 }
 
-/** The model a plan is priced at: the mock planner's price under ENGINE_MOCK=1, else Atomik's policy in the three families. */
+/**
+ * The model a plan is priced at: the mock planner's price under ENGINE_MOCK=1, else Atomik's thinking for a plan at the workspace's
+ * setting (lib/atomikModelPolicy › selectAtomikThinking). `want` (a run's saved model) is not a choice and is not asked. The board planner
+ * sends no effort of its own: its fixed output ceiling (PLANNER_MAX_OUTPUT_TOKENS) holds the thinking and the answer, and Claude
+ * thinks at its own default there.
+ */
 export async function plannerPrice(want: string): Promise<PlannerPrice> {
+  void want;
   if (engineMock()) return { id: MOCK_PLANNER_MODEL, catalog: MOCK_PLANNER_CATALOG, direct: false };
   const { atomikModels } = await import("./atomik-server");
   const models = await catalog();
-  const id = selectPlannerModel(want, atomikModels(models));
+  const menu = atomikModels(models);
+  const pick = selectAtomikThinking(await workspaceThinking(), "plan", models.filter((m) => menu.some((entry) => entry.id === m.id)));
+  if (!pick) throw new PlannerError(THINKING_UNAVAILABLE);
+  const id = selectPlannerModel(pick.model, menu);
   const model = models.find((m) => m.id === id);
-  if (!model) throw new PlannerError("That thinking model is not available right now. Choose another, or Auto.");
+  if (!model) throw new PlannerError(THINKING_UNAVAILABLE);
   /* A direct door (any vendor) is quoted at its cold cache-write ceiling and settled at its usage × this snapshot. */
   return { id, catalog: model, direct: isDirectText(id), engine: textEngine(id) };
 }

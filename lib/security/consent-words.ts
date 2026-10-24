@@ -1,17 +1,20 @@
 /**
- * An identity consent record, as both sides read it (Gaps A, "Identity — on the Cast card for the lead").
+ * An identity consent tick, as both sides read it (Gaps A, "Identity — on the Cast card for the lead").
  *
- * Pure: no database, no React. The server validates a new record with `cleanConsent` and the screens word a stored
- * one with `consentSummary`, so the card, the dialog and the route say the same thing.
+ * Pure: no database, no React. The server cleans a new tick with `cleanConsent` and the screens word a stored one
+ * with `consentSummary`, so the card, the dialog and the route say the same thing.
  *
- * A consent record is a person's statement that the one whose face or voice it is agreed to it: whose it is, what it
- * covers (face, voice), the uses allowed, an end date, a recording of that person agreeing, and the attest box ("I am
- * this person, or I hold their signed release"). Only a person records one (lib/security/people-only.ts).
+ * A TICK, NOT A GATE (owner, 23 Oct 2026, 13:15 IST): "Identity training (and anything else that refuses for want of
+ * consent) records the tick — who ticked, when, an optional file — and refuses nothing." A record is the tick: who
+ * ticked (the signed-in person) and when. Everything else on it is optional, kept for the lawyer's NOC and never
+ * required to proceed: whose face or voice it is, what it covers (face, voice), the uses allowed, an end date, a file
+ * (a recording of that person agreeing, or their signed release) and the attest box ("I am this person, or I hold
+ * their signed release"). Only a person ticks (lib/security/people-only.ts; rule 11).
  */
 
 export const CONSENT_USES = ["production", "identity", "ads", "social"] as const;
 export type ConsentUse = (typeof CONSENT_USES)[number];
-/* "identity": training an identity of their face (review of #558, M1); every training needs it. */
+/* "identity": training an identity of their face. Optional, like every use: nothing refuses for want of it. */
 export const USE_LABEL: Record<ConsentUse, string> = { production: "This production", identity: "Identity training", ads: "Ads", social: "Social posts" };
 const USE_WORDS: Record<ConsentUse, string> = { production: "this production", identity: "identity training", ads: "ads", social: "social posts" };
 
@@ -30,7 +33,7 @@ export type ConsentInput = {
   otherUse?: unknown;
   /** The last day it holds, as YYYY-MM-DD (the date field), or a time in ms. */
   until?: unknown;
-  /** The recording's id (POST /api/identity-consents/recording): never an upload. */
+  /** The file's id (POST /api/identity-consents/recording): never an upload. */
   recordingId?: unknown;
   attested?: unknown;
 };
@@ -44,8 +47,11 @@ export type CleanConsent = {
   voice: boolean;
   uses: ConsentUse[];
   otherUse: string;
-  untilAt: number;
+  /** The last moment it holds, or null when no end date was given. */
+  untilAt: number | null;
+  /** The file's id, or "" when none was attached. */
   recordingId: string;
+  attested: boolean;
 };
 
 /** A stored record, as the routes return it. Never carries the recording's bytes or an address. */
@@ -59,15 +65,25 @@ export type ConsentRecord = {
   voice: boolean;
   uses: ConsentUse[];
   otherUse: string;
-  untilAt: number;
+  /** Null when no end date was given: the tick then holds until it is withdrawn. */
+  untilAt: number | null;
+  /** The attest box was ticked too (optional). */
+  attested: boolean;
   hasRecording: boolean;
+  /** What the file is, when there is one: a recording, or a signed release (a PDF). */
+  fileKind: ConsentFileKind | null;
   /** The recording, served by the consent route only: the recorder, an owner or an admin, signed in. */
   recordingUrl: string | null;
   recordedAt: number;
   recordedBy: string | null;
+  /** The tick is the reading person's own (their tick to untick); never an id. */
+  mine: boolean;
   revokedAt: number | null;
   identityId: string | null;
 };
+
+/** A tick's file: a recording of the person agreeing (sound or video), or their signed release (a PDF, or an image of it). */
+export type ConsentFileKind = "recording" | "document" | "image";
 
 export class ConsentError extends Error {
   constructor(message: string, readonly status = 400) { super(message); this.name = "ConsentError"; }
@@ -89,7 +105,11 @@ export function endOfDay(value: string): number | null {
 /** "YYYY-MM-DD" for a time, in UTC (the date field's value). */
 export const dayOf = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
-/** Validates a new record. Throws ConsentError with the words to show. */
+/**
+ * Cleans a new tick. Only what files it is required (the production and the cast member it is for); every other field
+ * is optional and an empty one is kept empty. A field that is given has to make sense (a real end date in the future,
+ * at most ten years on), so a typo is caught rather than stored. Throws ConsentError with the words to show.
+ */
 export function cleanConsent(input: ConsentInput, at = Date.now()): CleanConsent {
   const projectId = typeof input.projectId === "string" ? input.projectId : "";
   if (!ID.test(projectId)) throw new ConsentError("Which production is this consent for?");
@@ -97,32 +117,30 @@ export function cleanConsent(input: ConsentInput, at = Date.now()): CleanConsent
   if (!ID.test(subjectKey)) throw new ConsentError("Which cast member is this consent for?");
   const subjectLabel = text(input.subjectLabel, 100);
   const personName = text(input.personName, 120);
-  if (personName.length < 2) throw new ConsentError("Write the full name of the person whose face or voice it is, as on their release.");
   const face = input.face === true, voice = input.voice === true;
-  if (!face && !voice) throw new ConsentError("Choose what it covers: their face, their voice or both.");
   const asked = Array.isArray(input.uses) ? input.uses : [];
   const uses = CONSENT_USES.filter((use) => asked.includes(use));
   const otherUse = text(input.otherUse, 200);
-  if (!uses.length && !otherUse) throw new ConsentError("Choose at least one use the person allowed.");
-  const untilAt = typeof input.until === "string" ? endOfDay(input.until) : typeof input.until === "number" && Number.isSafeInteger(input.until) ? input.until : null;
-  if (untilAt == null) throw new ConsentError("Choose the last day this consent holds.");
-  if (untilAt <= at) throw new ConsentError("The end date has to be in the future.");
-  if (untilAt > at + MAX_CONSENT_DAYS * 86_400_000) throw new ConsentError("A consent record runs for ten years at most.");
-  const recordingId = typeof input.recordingId === "string" ? input.recordingId : "";
-  if (!ID.test(recordingId)) throw new ConsentError("Add the recording of the person saying they agree.");
-  if (input.attested !== true) throw new ConsentError("Tick the statement first.");
-  return { projectId, subjectKey, subjectLabel, personName, face, voice, uses, otherUse, untilAt, recordingId };
+  const given = input.until != null && input.until !== "";
+  const untilAt = !given ? null : typeof input.until === "string" ? endOfDay(input.until) : typeof input.until === "number" && Number.isSafeInteger(input.until) ? input.until : null;
+  if (given && untilAt == null) throw new ConsentError("That end date isn't a real day.");
+  if (untilAt != null && untilAt <= at) throw new ConsentError("The end date has to be in the future.");
+  if (untilAt != null && untilAt > at + MAX_CONSENT_DAYS * 86_400_000) throw new ConsentError("An end date is ten years away at most.");
+  const recordingId = typeof input.recordingId === "string" && input.recordingId ? input.recordingId : "";
+  if (recordingId && !ID.test(recordingId)) throw new ConsentError("That file could not be found. Add it again.");
+  return { projectId, subjectKey, subjectLabel, personName, face, voice, uses, otherUse, untilAt, recordingId, attested: input.attested === true };
 }
 
-/** A record holds now: not withdrawn and not past its end date. */
-export const consentLive = (record: Pick<ConsentRecord, "revokedAt" | "untilAt">, at = Date.now()): boolean => record.revokedAt == null && record.untilAt > at;
+/** A tick holds now: not withdrawn and not past its end date (one with no end date holds until withdrawn). */
+export const consentLive = (record: Pick<ConsentRecord, "revokedAt" | "untilAt">, at = Date.now()): boolean =>
+  record.revokedAt == null && (record.untilAt == null || record.untilAt > at);
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 /** "30 Sep 2027", in UTC: the same on every machine. */
 export const dateWords = (ms: number) => { const d = new Date(ms); return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`; };
 
-/** "Face and voice", "Face", "Voice". */
-export const coversWords = (r: Pick<ConsentRecord, "face" | "voice">) => (r.face && r.voice ? "Face and voice" : r.face ? "Face" : "Voice");
+/** "Face and voice", "Face", "Voice", or "" when neither was chosen. */
+export const coversWords = (r: Pick<ConsentRecord, "face" | "voice">) => (r.face && r.voice ? "Face and voice" : r.face ? "Face" : r.voice ? "Voice" : "");
 
 /** "this production, ads, social posts" (and the person's own words for anything else). */
 export function usesWords(r: Pick<ConsentRecord, "uses" | "otherUse">): string {
@@ -132,13 +150,16 @@ export function usesWords(r: Pick<ConsentRecord, "uses" | "otherUse">): string {
 }
 
 /**
- * The card's consent line, as the design writes it: "Face and voice · this production, ads, social posts · until
- * 30 Sep 2027 · recorded 6 Oct 2026 by <name>". A withdrawn or ended record says so instead.
+ * The card's consent line: what was given, then who ticked it and when. "Face and voice · this production, ads, social
+ * posts · until 30 Sep 2027 · ticked 6 Oct 2026 by <name>"; a bare tick is "Ticked 6 Oct 2026 by <name>". A withdrawn
+ * or ended tick says so instead.
  */
 export function consentSummary(r: ConsentRecord, at = Date.now()): string {
   if (r.revokedAt != null) return `Consent withdrawn ${dateWords(r.revokedAt)}`;
-  if (r.untilAt <= at) return `Consent ended ${dateWords(r.untilAt)}`;
-  return [coversWords(r), usesWords(r), `until ${dateWords(r.untilAt)}`, `recorded ${dateWords(r.recordedAt)}${r.recordedBy ? ` by ${r.recordedBy}` : ""}`].join(" · ");
+  if (r.untilAt != null && r.untilAt <= at) return `Consent ended ${dateWords(r.untilAt)}`;
+  const parts = [coversWords(r), usesWords(r), r.untilAt != null ? `until ${dateWords(r.untilAt)}` : ""].filter(Boolean);
+  const ticked = `ticked ${dateWords(r.recordedAt)}${r.recordedBy ? ` by ${r.recordedBy}` : ""}`;
+  return parts.length ? [...parts, ticked].join(" · ") : ticked[0].toUpperCase() + ticked.slice(1);
 }
 
 /** The key a production's consent records are filed under: the production, else the draft itself. */

@@ -66,6 +66,9 @@ test("Hooks: pick lasts for the session; Format briefs hand one brief to Make, w
   await expect(hooks.getByRole("button", { name: /Pick “Water, simply\./ })).toHaveAttribute("aria-pressed", "true");
   /* The agent writes the nine more: pressing opens its dialog, which quotes before anything is reserved. */
   await expect(hooks.getByTestId("ads-hooks-write")).toContainText("Write 9 more");
+  /* Atomik's thinking is connected (the server says `configured`, never which model): the button is live and priced before anything runs. */
+  await expect(hooks.getByTestId("ads-hooks-write")).toBeEnabled();
+  await expect(hooks.getByTestId("ads-hooks-write")).toContainText(/Write 9 more · .*\d+ cr/, { timeout: 30_000 });
   const formats = page.getByTestId("ads-formats");
   await expect(formats).toContainText("Format briefs · 6 formats · 18 briefs");
   await formats.getByTestId("ads-format-posters").click();

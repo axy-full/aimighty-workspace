@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { appearsIn, castLabel, castStatus, consentLine, deriveCast, renderPreset, shotsWords, type CastCardData } from "../../components/graphite/board/cards/cast/cast-model";
+import { appearsIn, attachHeld, attachedRenames, attachedState, bindCastIdentity, bindProblem, castBindingOf, castNamesOf, heldBindFor, staleAttached, parkedForCard, parkedPass, restoreCastBinding, startedBindStep, castLabel, castStatus, consentLine, deriveCast, earlierSheetOf, identityOf, renderPreset, shotsWords, updateToNewerSheet, type CastCardData } from "../../components/graphite/board/cards/cast/cast-model";
+import { dropAttachedFor, markAttached, parkBind, subscribeParked, takeParked } from "../../components/graphite/board/cards/cast/parked-binds";
 import type { BoardCard, BoardSource } from "../../lib/board/types";
 import type { SoulIdentity } from "../../lib/workbench/soul-identity";
 import type { Asset, CanvasNode, Project } from "../../lib/workbench/studio";
@@ -104,4 +105,219 @@ test("an entry built earlier on an account that is no longer used is shown read-
   const [card] = cards(p);
   expect(card.data.retired).toBeTruthy();
   expect(castStatus(card.data, null).text).toBe("Built earlier · read-only");
+});
+
+test("a training binds only to the card it was pressed from, in the production it was pressed in; another production is left as it is", () => {
+  const pressedIn = withProduction(project(), { cast: { entries: [entry({ id: "cast-01" })] } });
+  const bound = bindCastIdentity(pressedIn, { projectId: pressedIn.id, entryId: "cast-01", nodeId: null }, "soul_new");
+  expect(bound.production?.cast?.entries[0].identityId).toBe("soul_new");
+  /* The same cast entry id in another production (ids such as cast-01 repeat across productions): nothing changes. */
+  const other = { ...withProduction(project(), { cast: { entries: [entry({ id: "cast-01" })] } }), id: "another_production" } as Project;
+  const untouched = bindCastIdentity(other, { projectId: pressedIn.id, entryId: "cast-01", nodeId: null }, "soul_new");
+  expect(untouched).toBe(other);
+  expect(untouched.production?.cast?.entries[0].identityId).toBeUndefined();
+  /* A locked asset is never rebound (its lock is respected); the newer training goes on the cast entry. */
+  const locked = { ...pressedIn, assets: [{ id: "a1", name: "Lead", kind: "image", category: "Character", url: "/x", description: "", prompt: "", status: "Draft", locked: true, version: 1, refs: [], soulIdentityId: "soul_old" } as Asset],
+    nodes: [{ id: "n1", assetId: "a1", title: "Lead", type: "reference", x: 0, y: 0, width: 200, linked: [] } as unknown as CanvasNode] } as Project;
+  const lockedBound = bindCastIdentity(locked, { projectId: locked.id, entryId: "cast-01", nodeId: "n1" }, "soul_new");
+  expect(lockedBound.assets[0].soulIdentityId).toBe("soul_old");
+  expect(lockedBound.production?.cast?.entries[0].identityId).toBe("soul_new");
+});
+
+test("a card bound to an older identity on a locked asset and a newer one on its cast entry follows the newer: never Retry on the old failure", () => {
+  const old = identity({ id: "soul_old", status: "failed", createdAt: 1, error: "Too dark" });
+  const fresh = identity({ id: "soul_new", status: "training", createdAt: 2 });
+  const data = { identityId: "soul_old", identityIds: ["soul_old", "soul_new"] };
+  expect(identityOf(data, [old, fresh])?.id).toBe("soul_new");
+  expect(castStatus({ ...cards(project())[0]?.data, variant: "cast", retired: null, rendering: false, ...data } as CastCardData, [old, fresh]).text).toBe("Identity training");
+  /* With only the old one listed, it is the one shown; with one binding, it behaves as before. */
+  expect(identityOf(data, [old])?.id).toBe("soul_old");
+  expect(identityOf({ identityId: "soul_old" }, [old, fresh])?.id).toBe("soul_old");
+});
+
+test("a bind parked for a production is taken once, in the order pressed, only for that production and workspace", () => {
+  parkBind("scope-a", { projectId: "prod_a", entryId: "cast-01", nodeId: null, identityId: "soul_1" }, 1_000);
+  parkBind("scope-a", { projectId: "prod_a", entryId: "cast-02", nodeId: null, identityId: "soul_2" }, 2_000);
+  parkBind("scope-a", { projectId: "prod_b", entryId: "cast-01", nodeId: null, identityId: "soul_3" }, 2_500);
+  parkBind("scope-b", { projectId: "prod_a", entryId: "cast-01", nodeId: null, identityId: "soul_4" }, 2_500);
+  /* The same identity is parked once. */
+  parkBind("scope-a", { projectId: "prod_a", entryId: "cast-01", nodeId: null, identityId: "soul_1" }, 1_500);
+  expect(takeParked("scope-a", "prod_a", 3_000).map((p) => p.identityId)).toEqual(["soul_1", "soul_2"]);
+  expect(takeParked("scope-a", "prod_a", 3_000)).toEqual([]);
+  expect(takeParked("scope-a", "prod_b", 3_000).map((p) => p.identityId)).toEqual(["soul_3"]);
+  expect(takeParked("scope-b", "prod_a", 3_000).map((p) => p.identityId)).toEqual(["soul_4"]);
+  /* One left unopened for 30 days is dropped. */
+  parkBind("scope-a", { projectId: "prod_c", entryId: "cast-01", nodeId: null, identityId: "soul_5" }, 0);
+  expect(takeParked("scope-a", "prod_c", 31 * 86_400_000)).toEqual([]);
+});
+
+test("a parked or in-flight bind lands only on the cast member that still has the name it was pressed under (R4-1)", () => {
+  const pressedIn = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Lead" })] } });
+  const at = { projectId: pressedIn.id, entryId: "cast-01", nodeId: null };
+  expect(bindCastIdentity(pressedIn, { ...at, name: "Lead" }, "soul_new").production?.cast?.entries[0].identityId).toBe("soul_new");
+  /* The name is compared as the card compares names: case and spaces at the ends don't matter. */
+  expect(bindCastIdentity(pressedIn, { ...at, name: " lead " }, "soul_new").production?.cast?.entries[0].identityId).toBe("soul_new");
+  /* Renamed, or another cast member in the same slot: nothing is bound. */
+  const renamed = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Another person" })] } });
+  const untouched = bindCastIdentity({ ...renamed, id: pressedIn.id } as Project, { ...at, name: "Lead" }, "soul_new");
+  expect(untouched.production?.cast?.entries[0].identityId).toBeUndefined();
+  /* A canvas card renamed since the press is skipped too. */
+  const asset = { id: "a1", name: "Lead", kind: "image", category: "Character", url: "/x", description: "", prompt: "", status: "Draft", locked: false, version: 1, refs: [] } as Asset;
+  const onCanvas = { ...pressedIn, production: undefined, assets: [asset], nodes: [{ id: "n1", assetId: "a1", title: "Someone else", type: "reference", x: 0, y: 0, width: 200, linked: [] } as unknown as CanvasNode] } as Project;
+  expect(bindCastIdentity(onCanvas, { projectId: onCanvas.id, entryId: null, nodeId: "n1", name: "Lead" }, "soul_new")).toBe(onCanvas);
+});
+
+test("a card whose own asset renders with an earlier sheet says so and offers Update, which moves an unlocked asset and refuses a locked one in words", () => {
+  const old = identity({ id: "soul_old", status: "ready", createdAt: 1, references: [{ uploadId: "up_old" }] });
+  const fresh = identity({ id: "soul_new", status: "ready", createdAt: 2, references: [{ uploadId: "up_new" }] });
+  const data = { identityId: "soul_old", identityIds: ["soul_old", "soul_new"], assetIdentityId: "soul_old" };
+  expect(earlierSheetOf(data, [old, fresh])?.id).toBe("soul_new");
+  /* Nothing to say when the asset already renders with the newest, or the newer one isn't ready yet. */
+  expect(earlierSheetOf({ ...data, assetIdentityId: "soul_new" }, [old, fresh])).toBeNull();
+  expect(earlierSheetOf(data, [old, { ...fresh, status: "training" }])).toBeNull();
+  expect(earlierSheetOf({ ...data, assetIdentityId: null }, [old, fresh])).toBeNull();
+  const asset = (locked: boolean) => ({ id: "a1", name: "Lead", kind: "image", category: "Character", url: "/x", description: "", prompt: "", status: "Draft", locked, version: 1, refs: [], soulIdentityId: "soul_old" }) as Asset;
+  const withAsset = (locked: boolean) => ({ ...project(), assets: [asset(locked)], nodes: [{ id: "n1", assetId: "a1", title: "Lead", type: "reference", x: 0, y: 0, width: 200, linked: [] } as unknown as CanvasNode] }) as Project;
+  /* Update moves an unlocked asset onto the newer identity (the existing bind: lib/workbench/soul-identity.ts). */
+  const moved = updateToNewerSheet(withAsset(false), "n1", fresh);
+  expect(moved.assets[0]).toMatchObject({ id: "a1", soulIdentityId: "soul_new", uploadId: "up_new" });
+  /* A locked asset is never changed: the existing bind refuses, in words. */
+  expect(() => updateToNewerSheet(withAsset(true), "n1", fresh)).toThrow(/Unlock this asset/);
+});
+
+test("a bind that can't land says why, and the card it stands for is found by its cast entry or canvas card (R5-2)", () => {
+  const pressedIn = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Lead" })] } });
+  const at = { projectId: pressedIn.id, entryId: "cast-01", nodeId: null, name: "Lead" };
+  expect(bindProblem(pressedIn, at)).toBeNull();
+  expect(bindProblem({ ...pressedIn, id: "another_production" } as Project, at)).toBe("elsewhere");
+  const renamed = { ...withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Another person" })] } }), id: pressedIn.id } as Project;
+  expect(bindProblem(renamed, at)).toBe("renamed");
+  const parked = [{ ...at, identityId: "soul_1", at: 1 }, { projectId: pressedIn.id, entryId: null, nodeId: "n9", name: "Prop", identityId: "soul_2", at: 2 }];
+  expect(parkedForCard(parked, { entryId: "cast-01", nodeId: null })?.identityId).toBe("soul_1");
+  expect(parkedForCard(parked, { entryId: null, nodeId: "n9" })?.identityId).toBe("soul_2");
+  expect(parkedForCard(parked, { entryId: "cast-02", nodeId: null })).toBeNull();
+});
+
+test("what a training's reply does with its bind: bind now, or park it and say why (bindStarted's decision)", () => {
+  const open = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Lead" })] } });
+  const at = { projectId: open.id, entryId: "cast-01", nodeId: null, name: "Lead" };
+  expect(startedBindStep(open, at)).toEqual({ action: "bind" });
+  expect(startedBindStep({ ...open, id: "another_production" } as Project, at)).toEqual({ action: "park", why: "elsewhere" });
+  expect(startedBindStep({ ...withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Maya" })] } }), id: open.id } as Project, at)).toEqual({ action: "park", why: "renamed" });
+  expect(startedBindStep(null, at)).toEqual({ action: "park", why: "closed" });
+});
+
+test("a held bind is one whose card was renamed (R6-3); Attach binds it without the name check, and Undo puts the card back exactly", () => {
+  const renamed = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Maya", identityId: "soul_before" })] } });
+  const bind = { projectId: renamed.id, entryId: "cast-01", nodeId: null, name: "Lead", identityId: "soul_new", at: 1 };
+  expect(heldBindFor([bind], renamed, { entryId: "cast-01", nodeId: null })?.identityId).toBe("soul_new");
+  /* Parked for another production, or under the card's own name: not held here. */
+  expect(heldBindFor([{ ...bind, projectId: "another_production" }], renamed, { entryId: "cast-01", nodeId: null })).toBeNull();
+  expect(heldBindFor([{ ...bind, name: "Maya" }], renamed, { entryId: "cast-01", nodeId: null })).toBeNull();
+  const was = castBindingOf(renamed, bind);
+  expect(was).toEqual({ entry: "soul_before", asset: null });
+  const attached = attachHeld(renamed, bind, bind.identityId);
+  expect(attached.production?.cast?.entries[0].identityId).toBe("soul_new");
+  expect(restoreCastBinding(attached, bind, was).production?.cast?.entries[0].identityId).toBe("soul_before");
+  /* A card that had no binding before is left with none on Undo. */
+  const fresh = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Maya" })] } });
+  const back = restoreCastBinding(attachHeld(fresh, { ...bind, projectId: fresh.id }, "soul_new"), { ...bind, projectId: fresh.id }, castBindingOf(fresh, bind));
+  expect(back.production?.cast?.entries[0]).not.toHaveProperty("identityId");
+});
+
+test("a card renamed back while the production stays open binds in the same opening: the names signature changes, and the pass now binds it (R7-4)", () => {
+  const renamed = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Maya" })] } });
+  const bind = { projectId: renamed.id, entryId: "cast-01", nodeId: null, name: "Lead", identityId: "soul_new", at: 1 };
+  expect(parkedPass(renamed, [bind])).toEqual({ bind: [], renamed: [bind] });
+  /* Renamed back, in the same open project: the signature the board watches changes, and the pass binds it. */
+  const back = { ...renamed, production: { ...renamed.production, cast: { entries: [entry({ id: "cast-01", name: "Lead" })] } } } as Project;
+  expect(castNamesOf(back)).not.toBe(castNamesOf(renamed));
+  expect(parkedPass(back, [bind])).toEqual({ bind: [bind], renamed: [] });
+  expect(bindCastIdentity(back, bind, bind.identityId).production?.cast?.entries[0].identityId).toBe("soul_new");
+  /* Another production's binds are not in this pass. */
+  expect(parkedPass(back, [{ ...bind, projectId: "another_production" }])).toEqual({ bind: [], renamed: [] });
+});
+
+test("an attached bind stays, and holds the card again whenever the card is no longer bound to it (any undo route, R7-2)", () => {
+  const renamed = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Maya" })] } });
+  const bind = { projectId: renamed.id, entryId: "cast-01", nodeId: null, name: "Lead", identityId: "soul_new", at: 1, attached: true, was: castBindingOf(renamed, { projectId: renamed.id, entryId: "cast-01", nodeId: null }), attachedName: "Maya" };
+  const attached = attachHeld(renamed, bind, bind.identityId);
+  /* Bound: not held. Unbound again (an Undo by the toast, Cmd/Ctrl+Z, or anything else): held again. */
+  expect(heldBindFor([bind], attached, { entryId: "cast-01", nodeId: null })).toBeNull();
+  const undone = restoreCastBinding(attached, bind, castBindingOf(renamed, bind));
+  expect(heldBindFor([bind], undone, { entryId: "cast-01", nodeId: null })?.identityId).toBe("soul_new");
+  /* Undo with another production open changes nothing there. */
+  const other = { ...attached, id: "another_production" } as Project;
+  expect(restoreCastBinding(other, bind, castBindingOf(renamed, bind))).toBe(other);
+});
+
+test("the parked store: taking with nothing to take writes and announces nothing; attached binds are kept and never taken (R7-2, R7-3)", () => {
+  let told = 0;
+  const off = subscribeParked(() => { told++; });
+  parkBind("scope-r7", { projectId: "prod_a", entryId: "cast-01", nodeId: null, name: "Lead", identityId: "soul_a" }, 1_000);
+  expect(told).toBe(1);
+  /* A rename keystroke in another production, or with nothing parked for it: nothing written, nobody woken. */
+  expect(takeParked("scope-r7", "prod_b", 2_000)).toEqual([]);
+  expect(takeParked("scope-empty", "prod_b", 2_000)).toEqual([]);
+  expect(told).toBe(1);
+  /* Attached: kept, and not taken by the board's pass. */
+  markAttached("scope-r7", "soul_a", { entry: null, asset: null }, "Lead");
+  expect(told).toBe(2);
+  expect(takeParked("scope-r7", "prod_a", 2_000)).toEqual([]);
+  expect(told).toBe(2);
+  /* A newer training bound to the card drops the attached bind it no longer needs. */
+  dropAttachedFor("scope-r7", { projectId: "prod_a", entryId: "cast-01", nodeId: null }, "soul_newer");
+  expect(told).toBe(3);
+  parkBind("scope-r7", { projectId: "prod_a", entryId: "cast-02", nodeId: null, name: "Other", identityId: "soul_b" }, 3_000);
+  expect(takeParked("scope-r7", "prod_a", 4_000).map((p) => p.identityId)).toEqual(["soul_b"]);
+  off();
+});
+
+test("an attached record whose card was bound to another identity by another route is not held, and is dropped (R8-1)", () => {
+  const renamed = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Maya" })] } });
+  const card = { projectId: renamed.id, entryId: "cast-01", nodeId: null };
+  const bind = { ...card, name: "Lead", identityId: "soul_new", at: 1, attached: true, was: castBindingOf(renamed, card), attachedName: "Maya" };
+  /* Bound to Y (a newer training, the board's pass, any route): not held, and stale. */
+  const toY = bindCastIdentity(renamed, { ...card, name: null }, "soul_y");
+  expect(attachedState(toY, bind)).toBe("stale");
+  expect(heldBindFor([bind], toY, { entryId: "cast-01", nodeId: null })).toBeNull();
+  expect(staleAttached(toY, [bind])).toEqual([bind]);
+  /* The card gone: stale too. */
+  const gone = withProduction(project(), { cast: { entries: [] } });
+  expect(staleAttached({ ...gone, id: renamed.id } as Project, [bind])).toEqual([bind]);
+  /* Still attached, or undone exactly: kept. */
+  expect(attachedState(attachHeld(renamed, bind, bind.identityId), bind)).toBe("attached");
+  expect(attachedState(renamed, bind)).toBe("undone");
+  expect(staleAttached(renamed, [bind])).toEqual([]);
+});
+
+test("an attached record whose entry id is reused under another name is not held (R8-1)", () => {
+  const renamed = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Maya" })] } });
+  const card = { projectId: renamed.id, entryId: "cast-01", nodeId: null };
+  const bind = { ...card, name: "Lead", identityId: "soul_new", at: 1, attached: true, was: castBindingOf(renamed, card), attachedName: "Maya" };
+  /* The same entry id, now another character with no binding (as before the attach): not held; stale, so dropped. */
+  const reused = { ...withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Someone else" })] } }), id: renamed.id } as Project;
+  expect(heldBindFor([bind], reused, { entryId: "cast-01", nodeId: null })).toBeNull();
+  expect(attachedState(reused, bind)).toBe("stale");
+});
+
+test("attach, rename, then the Rig's undo: the card is held again, with no Train press (R9-2)", async () => {
+  const { identityCardView } = await import("../../lib/security/identity-card");
+  const renamed = withProduction(project(), { cast: { entries: [entry({ id: "cast-01", name: "Maya" })] } });
+  const card = { projectId: renamed.id, entryId: "cast-01", nodeId: null };
+  let record = { ...card, name: "Lead", identityId: "soul_new", at: 1, attached: true, was: castBindingOf(renamed, card), attachedName: "Maya" };
+  /* Attached, then renamed while attached: still "attached" (names aren't compared while bound), and the record follows. */
+  const attached = attachHeld(renamed, record, record.identityId);
+  const renamedAgain = { ...attached, production: { ...attached.production, cast: { entries: attached.production!.cast!.entries.map((e) => ({ ...e, name: "Maya Rao" })) } } } as Project;
+  expect(attachedState(renamedAgain, record)).toBe("attached");
+  expect(attachedRenames(renamedAgain, [record])).toEqual([{ identityId: "soul_new", name: "Maya Rao" }]);
+  record = { ...record, attachedName: "Maya Rao" };
+  /* The Rig's undo puts the binding back: the card is held again, and offers no Train for it. */
+  const undone = restoreCastBinding(renamedAgain, record, record.was);
+  expect(attachedState(undone, record)).toBe("undone");
+  const held = heldBindFor([record], undone, { entryId: "cast-01", nodeId: null });
+  expect(held?.identityId).toBe("soul_new");
+  const view = identityCardView({ consents: [], subjectKey: "cast-01", bound: null, identities: [], held: { name: held!.name ?? "", identity: { id: "soul_new", name: "Lead", status: "training", creditsBilled: null, error: null, createdAt: 2 } } });
+  expect(view.stage).toBe("started");
+  expect(["no-consent", "recorded"]).not.toContain(view.stage);
 });

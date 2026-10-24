@@ -1,4 +1,7 @@
-import { ATOMIK_MODEL_IDS, VERIFIED_TEXT_MODEL_IDS } from "./atomikModelPolicy";
+import { CLAUDE_MODEL_IDS, VERIFIED_TEXT_MODEL_IDS } from "./atomikModelPolicy";
+
+/** The verified OpenAI text ids: what the Treatment writer (TREATMENT_WRITER_MODEL) may name from the catalogue. */
+const TREATMENT_WRITER_IDS: readonly string[] = VERIFIED_TEXT_MODEL_IDS.filter((id) => id.startsWith("openai/"));
 import { ENHANCER_MODELS } from "./shell/enhancer";
 import { DEFAULT_TEXT_MODELS } from "./platformLayer";
 import { ASTRA_BLENDER_MODEL } from "./astra-blender/scene";
@@ -13,7 +16,9 @@ const unique = (ids: Iterable<string>): string[] => [...new Set(ids)];
 
 /** Text ids that must carry input and output prices: without one, the feature that picks them has nothing to quote. */
 export const PRICED_TEXT_IDS: readonly string[] = unique([
-  ...ATOMIK_MODEL_IDS,
+  /* Every id a Thinking slot may name, and every verified OpenAI id the Treatment writer may name. */
+  ...CLAUDE_MODEL_IDS,
+  ...TREATMENT_WRITER_IDS,
   ...Object.values(ENHANCER_MODELS).flat(),
   ...Object.values(DEFAULT_TEXT_MODELS),
   ASTRA_BLENDER_MODEL,

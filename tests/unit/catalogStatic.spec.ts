@@ -7,7 +7,7 @@ import {
 } from "../../lib/catalog";
 import { directTextCostUsd } from "../../lib/openai-direct";
 import { textRequestEstimate } from "../../lib/paidText";
-import { ATOMIK_MODEL_IDS } from "../../lib/atomikModelPolicy";
+import { CLAUDE_MODEL_IDS, VERIFIED_TEXT_MODEL_IDS } from "../../lib/atomikModelPolicy";
 import { ENHANCER_MODELS } from "../../lib/shell/enhancer";
 import { DEFAULT_TEXT_MODELS } from "../../lib/platformLayer";
 import { ASTRA_BLENDER_MODEL } from "../../lib/astra-blender/scene";
@@ -72,7 +72,7 @@ const priceOf = (value: unknown): number | null => {
 
 test("every model a feature can pick has input and output prices and a provider in the snapshot", () => {
   const mustPrice = [...new Set<string>([
-    ...ATOMIK_MODEL_IDS, ...Object.values(ENHANCER_MODELS).flat(), ...Object.values(DEFAULT_TEXT_MODELS), ASTRA_BLENDER_MODEL,
+    ...CLAUDE_MODEL_IDS, ...VERIFIED_TEXT_MODEL_IDS.filter((id) => id.startsWith("openai/")), ...Object.values(ENHANCER_MODELS).flat(), ...Object.values(DEFAULT_TEXT_MODELS), ASTRA_BLENDER_MODEL,
   ])];
   expect([...PRICED_TEXT_IDS].sort()).toEqual([...mustPrice].sort());
   // Gateway-listed entries and the provider-priced ones (models the gateway did not list, priced from the provider's page).

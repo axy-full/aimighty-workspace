@@ -119,8 +119,16 @@ export function textRequestEstimate(
 }
 
 export type PaidTextQuote = { model: string; effort: string; estimateCredits: number; estimateUsd?: number };
+/** A quote as a person is sent it: its price only. The model and effort stay on the server (Amendment (iii) §E: never disclosed). */
+export type PaidTextQuoteShown = Omit<PaidTextQuote, "model" | "effort">;
 type QuotedTextInput = {
   model: string; effort?: string; maxTokens: number; messages: unknown[]; maxCredits?: number;
+  /**
+   * Whether a run needs the ceiling its person approved (`maxCredits`). Default: whenever an effort is sent. Atomik's routes pass
+   * whether the CALLER sent one: the Thinking setting's effort now applies to every turn (lib/atomikThinking.ts), and a run without
+   * an approved ceiling keeps the old $1 safety cap below rather than the quoted-effort one.
+   */
+  ceilingRequired?: boolean;
   /** A short rewrite that must come back fast (the prompt enhancer): the lightest reasoning the model offers, with a small, fixed room to think. Quoted and run the same way. */
   quick?: boolean;
 };
@@ -129,7 +137,7 @@ export function quickEffort(model: CatalogModel): string | undefined {
   const offered = atomikEffortOptions(model).map((option) => option.value);
   return ["none", "minimal", "low"].find((value) => offered.includes(value));
 }
-async function compilePaidText(input: QuotedTextInput, override?: CatalogModel) {
+async function compilePaidText(input: QuotedTextInput, override?: CatalogModel, quote = false) {
   const model = override ?? (await findModel(input.model));
   if (!model)
     throw new PaidTextError(
@@ -153,7 +161,10 @@ async function compilePaidText(input: QuotedTextInput, override?: CatalogModel) 
   });
   if (usesImages && !model.inputModalities?.includes("image"))
     throw new PaidTextError("This model cannot read image references. Choose a model with image input or remove the references.", 422);
-  const estimate = textRequestEstimate(model, input.messages, reasoning.maxTokens, input.effort !== undefined);
+  /* The quoted-effort safety cap holds for a quote, and for a run that carries (or must carry) the ceiling its person approved on one; a run that
+     needs no ceiling (ceilingRequired false) and has none keeps the older cap. */
+  const estimate = textRequestEstimate(model, input.messages, reasoning.maxTokens,
+    input.effort !== undefined && (quote || input.maxCredits !== undefined || input.ceilingRequired !== false));
   const estimateCredits = paidByPlatform(textKeyName(input.model)) ? billCredits(estimate, "text") : 0;
   if (input.maxCredits !== undefined && (!Number.isInteger(input.maxCredits) || input.maxCredits < 0 || estimateCredits > input.maxCredits))
     throw new PaidTextError("The writing estimate changed. Review the new quote before running.", 409);
@@ -169,11 +180,17 @@ async function compilePaidText(input: QuotedTextInput, override?: CatalogModel) 
 }
 /** A read-only quote: no request claim, reservation, provider call or spend row. */
 export async function quotePaidText(input: QuotedTextInput, override?: CatalogModel): Promise<PaidTextQuote> {
-  const compiled = await compilePaidText(input, override);
+  const compiled = await compilePaidText(input, override, true);
   return { model: compiled.model.id, effort: input.effort ?? "auto", estimateCredits: compiled.estimateCredits, estimateUsd: compiled.estimate };
 }
 export function paidTextQuoteResponse(quote: PaidTextQuote): Response {
   return Response.json(atomikPublicResponse(quote, creditsApply(currentTenant()?.workspace)), { headers: { "Cache-Control": "no-store" } });
+}
+/** An Atomik quote as a member is sent it: the price only. The thinking model and effort stay on the server (Amendment (iii) §E: never disclosed). */
+export function atomikQuoteResponse(quote: PaidTextQuote): Response {
+  const { model: _model, effort: _effort, ...shown } = quote;
+  void _model; void _effort;
+  return Response.json(atomikPublicResponse(shown satisfies PaidTextQuoteShown, creditsApply(currentTenant()?.workspace)), { headers: { "Cache-Control": "no-store" } });
 }
 export function paidTextQuoteScopeFailure(req: Request): Response | null {
   const tenant = requireTenant();
@@ -211,6 +228,8 @@ export function requestMaxCredits(value: unknown, required = false): number | un
 /** A settled text job; a held one (`holdSettlement`) also carries the two ways to end it. */
 export type PaidTextResult = {
   id: string; text: string; costUsd: number; engine: string; credits: number;
+  /** What the meter billed the job at (what it used, never past its estimate), and what it cost past that, the platform's. */
+  billedUsd?: number; overrunUsd?: number;
   finish?: () => Promise<PaidTextResult>;
   abandon?: (why: string) => Promise<PaidTextError>;
 };
@@ -223,6 +242,8 @@ export async function runPaidText(
     maxTokens: number;
     effort?: string;
     maxCredits?: number;
+    /** See QuotedTextInput. */
+    ceilingRequired?: boolean;
     kind: string;
     projectId?: string | null;
     createdBy?: string | null;
@@ -287,7 +308,7 @@ return await withRecoveryActivity('paid-text', async () => {
   const { model, estimate, estimateCredits, requestBody } = await compilePaidText(input, overrides.model);
   /* A job whose estimate stands for now: what is held (credits on the platform's key, none on the workspace's own). */
   const held: PaidTextBilling = { heldCredits: estimateCredits };
-  requestMaxCredits(input.maxCredits, input.effort !== undefined);
+  requestMaxCredits(input.maxCredits, input.ceilingRequired ?? input.effort !== undefined);
   await paidTextReady();
   const id = input.id ?? newId("text");
   /* The model call in scope (lib/modelTrace.ts) is told the job's id; nothing here changes for it. */
@@ -447,6 +468,10 @@ return await withRecoveryActivity('paid-text', async () => {
       }
       throw new PaidTextError(`${verdict.reason} Nothing was charged.`, 502, { nothingBilled: true });
     }
+    /* Defence in depth (money review 3): the workspace is billed what the job used, never past the estimate its person approved, on any door.
+       A direct door already refuses usage past it (above); a gateway reply's usage.cost is not capped by anything else. What it really cost
+       stays in the job row and atomik_spend for the platform admin; the meter bills the capped figure and records the rest as the platform's. */
+    const billedUsd = Math.min(cost, estimate), overrunUsd = cost > estimate ? cost - estimate : 0;
     const finish = async (): Promise<PaidTextResult> => {
       if (!(await settle(`UPDATE paid_text_jobs SET status='succeeded',cost_usd=?,response_json=?,updated_at=? WHERE id=?`, [cost, response.text, now(), id])))
         /* Answered after the cron's pass refunded it: not charged again, and not delivered as if it had been paid for. */
@@ -455,16 +480,17 @@ return await withRecoveryActivity('paid-text', async () => {
         sql: `UPDATE atomik_spend SET cost_usd=? WHERE id=?`,
         args: [cost, id],
       });
-      await meter({ ...event, status: "succeeded", engineCostUsd: cost });
+      await meter({ ...event, status: "succeeded", engineCostUsd: billedUsd, ...(overrunUsd > 0 ? { overrunUsd } : {}) });
       return {
         id,
         text: content as string,
         costUsd: cost,
+        billedUsd, overrunUsd,
         /* The ledger this job was reserved and settled on (its meter engine), for the caller's own rows. */
         engine: event.engine,
         /* What the ledger billed, for the screen that shows it: credits are
            what a workspace on credits sees, never the vendor's dollars. */
-        credits: await meteredCredits(id, paidByPlatform(textKeyName(input.model)) ? billCredits(cost, "text") : 0),
+        credits: await meteredCredits(id, paidByPlatform(textKeyName(input.model)) ? billCredits(billedUsd, "text") : 0),
       };
     };
     if (!input.holdSettlement) return await finish();
@@ -474,7 +500,7 @@ return await withRecoveryActivity('paid-text', async () => {
       const error = await freeFailure(silentOutcome(writer, "run", "not_delivered", `${why} Not billed to the workspace; the provider's own bill for the answer is the platform's.`), "The answer wasn't delivered. Nothing billed.", 499);
       return error;
     };
-    return { id, text: content as string, costUsd: cost, engine: event.engine, credits: paidByPlatform(textKeyName(input.model)) ? billCredits(cost, "text") : 0, finish, abandon };
+    return { id, text: content as string, costUsd: cost, engine: event.engine, credits: paidByPlatform(textKeyName(input.model)) ? billCredits(billedUsd, "text") : 0, finish, abandon };
   } catch (error) {
     const record = (
       await db()
@@ -522,12 +548,14 @@ return await withRecoveryActivity('paid-text', async () => {
           args: [cost, id],
         })
         .catch(() => {});
-      /* A job another step already settled (refused, declined, refunded) is not metered again here. */
+      /* A job another step already settled (refused, declined, refunded) is not metered again here. A completed one is billed what it used,
+         never past its estimate (as finish() bills it; money review 4): the raw cost stays in the job row, the rest is the platform's. */
       if (completed || moved)
         await meter({
           ...event,
           status: completed ? "succeeded" : "failed",
-          engineCostUsd: cost,
+          engineCostUsd: Math.min(cost, estimate),
+          ...(cost > estimate ? { overrunUsd: cost - estimate } : {}),
         });
       /* An unconfirmed submission is billed its estimate for now; reconcilePaidTextJobs returns it once no request can still be answering. */
       throw new PaidTextError(

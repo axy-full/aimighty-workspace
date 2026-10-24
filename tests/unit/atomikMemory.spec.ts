@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { MEDIUM } from "../helpers/thinkingSlots";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -387,7 +388,7 @@ test("the chat planner's quote and its turn read the same memory, and only this 
   });
   const post = (body: unknown) => route.POST(new Request("https://studio.test/api/atomik/ach_1", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), { params: Promise.resolve({ id: "ach_1" }) });
   expect((await post({ text: "A night ride at the harbour", quoteOnly: true })).status).toBe(200);
-  expect((await post({ text: "A night ride at the harbour" })).status).toBe(200);
+  expect((await post({ text: "A night ride at the harbour", maxCredits: 2 })).status).toBe(200);
   expect(seen.map((s) => s.quoteOnly ?? false)).toEqual([true, false]);
   expect(seen[0].memory).toBe(seen[1].memory);
   expect(seen[0].memory).toBe("- Brand: Teal and sand.\n- Audience (this project): Night riders.");
@@ -398,7 +399,8 @@ test("the Suites agent's plan carries the kept memory in the request it prices a
   const { db, ready } = await import("../../lib/db");
   const { seedProject } = await import("../../lib/workbench/studio");
   const server = await import("../../lib/workbench/atomik-server");
-  const model: CatalogModel = { id: "anthropic/claude-sonnet-4.6", name: "Economy", owner: "test", type: "language", inputModalities: ["text", "image"], description: "", contextWindow: 200000, maxTokens: 8192, pricing: { input: "0.0000001", output: "0.0000003" } };
+  /* The Medium slot's own model (tests/helpers/thinkingSlots), at a made-up rate. */
+  const model: CatalogModel = { id: MEDIUM, name: "Economy", owner: "test", type: "language", inputModalities: ["text", "image"], description: "", contextWindow: 200000, maxTokens: 8192, pricing: { input: "0.0000001", output: "0.0000003" } };
   const deps: Partial<AtomikDependencies> = {
     models: async () => [model], allowance: async () => ({ ok: true }),
     limits: async () => ({ allow: true, limits: { concurrency: 3, rendersPerHour: 30, storageBytes: 1_000_000 }, standing: { running: 0, startedLastHour: 0, usedBytes: 0 } }),

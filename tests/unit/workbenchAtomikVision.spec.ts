@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { LOW, MEDIUM } from "../helpers/thinkingSlots";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import path from "node:path";
@@ -88,8 +89,9 @@ const image = () =>
   })
     .png()
     .toBuffer();
+/* The Medium slot's own model (tests/helpers/thinkingSlots), at a made-up rate. */
 const model: CatalogModel = {
-  id: "anthropic/claude-sonnet-4.6",
+  id: MEDIUM,
   name: "Vision",
   owner: "test",
   type: "language",
@@ -554,13 +556,13 @@ test("sampled video frames are authorized, bounded, labeled and never substitute
   });
 });
 
-test("vision-aware free quote includes visual input and auto selects a capable economy model", async () => {
+test("vision-aware free quote includes visual input on the model Atomik's thinking runs, and one that cannot see is refused plainly", async () => {
   await runInTenant(workspace(), async () => {
     const f = await fixture();
     f.deps.models = async () => [
       {
         ...model,
-        id: "anthropic/claude-opus-4.7",
+        id: LOW,
         inputModalities: ["text"],
         pricing: { input: 0, output: 0 },
       },
@@ -575,9 +577,11 @@ test("vision-aware free quote includes visual input and auto selects a capable e
     expect(visual.model).toBe(model.id);
     expect(visual.visualCount).toBe(1);
     expect(visual.estimateUsd).toBeGreaterThan(text.estimateUsd);
-    await expect(
-      quoteAtomikJob({ ...f.input, model: "anthropic/claude-opus-4.7" }, "owner", f.deps),
-    ).rejects.toThrow("vision-capable");
+    /* A model in the request is not a choice: a text-only one named there is ignored. */
+    expect((await quoteAtomikJob({ ...f.input, model: LOW }, "owner", f.deps)).model).toBe(model.id);
+    /* The model that runs listed without image input: refused before a quote, never swapped for another model that can see. */
+    f.deps.models = async () => [{ ...model, inputModalities: ["text"] }, { ...model, id: LOW }];
+    await expect(quoteAtomikJob(f.input, "owner", f.deps)).rejects.toThrow("can't inspect images");
     expect(f.calls()).toBe(0);
     expect(f.reservations()).toBe(0);
     expect(

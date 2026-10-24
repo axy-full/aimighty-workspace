@@ -10,6 +10,41 @@ import { publicRun } from "./pipeline/public";
 import type { CompiledPipeline } from "./pipeline/schema";
 
 // An allowlist keeps new credential/session tables out of customer exports.
+/**
+ * A Studio Atomik job as the export carries it: no thinking model and no effort, in the request or in its plan (Amendment (iii) §E:
+ * never disclosed). The job row keeps them, for settlement and the platform admin.
+ */
+function exportedAtomikJob(row: Row): Row {
+  const parse = (value: unknown): Record<string, unknown> | null => {
+    try { const parsed = JSON.parse(String(value)); return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null; } catch { return null; }
+  };
+  const request = parse(row.request_body), plan = row.result == null ? null : parse(row.result);
+  if (request) { delete request.model; delete request.effort; }
+  if (plan) {
+    delete plan.effort; plan.model = "atomik";
+    if (plan.referenceAdAnalysis && typeof plan.referenceAdAnalysis === "object") (plan.referenceAdAnalysis as Record<string, unknown>).model = "atomik";
+  }
+  return { ...row, ...(request ? { request_body: JSON.stringify(request) } : {}), ...(plan ? { result: JSON.stringify(plan) } : {}) };
+}
+
+/**
+ * A meter line's provider outcome as the export carries it: for a credit workspace, no amount the provider billed (vendor dollars); for a
+ * line of Atomik's thinking, no provider's own words (they can name the model) and no provider (Amendment (iii) §E). Unreadable: dropped.
+ */
+function exportedOutcome(raw: unknown, thinking: boolean, credits: boolean): string | null {
+  try {
+    const outcome = JSON.parse(String(raw)) as Record<string, unknown>;
+    if (!outcome || typeof outcome !== "object") return null;
+    if (credits && outcome.billing && typeof outcome.billing === "object") {
+      const billing = { ...(outcome.billing as Record<string, unknown>) };
+      delete billing.amount; delete billing.unit;
+      outcome.billing = billing;
+    }
+    if (thinking) { outcome.message = null; outcome.provider = "atomik"; }
+    return JSON.stringify(outcome);
+  } catch { return null; }
+}
+
 const SHARED_TABLES = [
   "projects",
   "productions",
@@ -144,11 +179,11 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
     contents.workbench_atomik_jobs = tables.has("workbench_atomik_jobs")
       ? (
           await tx.execute({
-            sql: `SELECT id,project_id,production_project_id,request_id,request_body,model,status,
+            sql: `SELECT id,project_id,production_project_id,request_id,request_body,status,
         estimate_credits,credits,result,error,created_at,updated_at FROM workbench_atomik_jobs WHERE owner=?`,
             args: [ownerId],
           })
-        ).rows.map((row) => ({ ...row }))
+        ).rows.map((row) => exportedAtomikJob({ ...row }))
       : [];
     // Pipelines are creator-private, unlike legacy shared recipe/run rows.
     // Child attempts, quote summaries, selections and timelines are sanitized
@@ -202,10 +237,15 @@ export async function workspaceExport(ownerId: string, ownerEmail: string) {
       })
     ).rows.map((row) => {
       const exported: Row = { ...row };
+      /* A line of Atomik's thinking names neither its model nor its vendor (Amendment (iii) §E); the platform's row keeps both. */
+      if (name === "meter_events" && exported.kind === "text") { exported.model = "atomik"; exported.engine = "atomik"; }
       if (name === "meter_events" && creditWorkspace) {
+        /* Vendor dollars reach no one but a platform admin: what the job cost the platform, and what it cost past what the workspace was billed. */
         delete exported.engine_cost_usd;
+        delete exported.overrun_usd;
         delete exported.paid_by_platform;
       }
+      if (name === "meter_events" && exported.provider_outcome != null) exported.provider_outcome = exportedOutcome(exported.provider_outcome, exported.kind === "text", creditWorkspace);
       return exported;
     });
   }

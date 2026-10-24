@@ -94,7 +94,7 @@ export function ReferenceTool({ scope, editor, items, onOpen }: { scope: string;
     } catch (cause) { work.setError(cause instanceof Error ? cause.message : "The direction could not be applied."); }
   };
   const blocked = !selected ? "Choose the reference video first." : !saved ? SAVING_NOW : !agent.data ? (agent.error ? "The agent’s runs could not be read. Try again below." : "Reading the agent’s runs…")
-    : !agent.data.configured || !models.length ? "No priced thinking model that reads images is set up for this workspace. Ask an admin to add one in Workspace › Engines." : reviewing ? "A review is running." : null;
+    : !agent.data.configured ? "No priced thinking model that reads images is set up for this workspace. Ask an admin to add one in Workspace › Engines." : reviewing ? "A review is running." : null;
 
   return (
     <div className="bo gx-enter" data-testid="reference-tool">
