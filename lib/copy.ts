@@ -148,6 +148,16 @@ export const MONEY = {
   statement: "Download statement",
 } as const;
 
+/**
+ * Attach a brief on Home: what the reader on this device takes, said where the file is picked (owner, 24 Oct 2026, item 6).
+ * `{size}` and `{pages}` are filled from the reader's own limits (lib/workbench/screenplay.ts) by
+ * components/graphite/home/brief-file.ts, as a price is joined at its call site, so the words cannot drift from the limits.
+ */
+export const BRIEF = {
+  readerLimits: "Up to {size} and {pages} pages of text.",
+  readerScanned: "Scanned pages read once document reading ships.",
+} as const;
+
 /** The visitor site and "How Particl works" (v31.12–v31.16). */
 export const SITE = {
   inviteOnly: "Invite only.",
@@ -158,5 +168,5 @@ export const SITE = {
 
 /** The whole table, by section; the strings test walks it. */
 export const COPY = {
-  STEPS, BUTTONS, MODES, THINKING, TICKS, CARD_STATES, ELEMENT_KINDS, SETTINGS, LIBRARY, PLACEHOLDERS, MONEY, SITE,
+  STEPS, BUTTONS, MODES, THINKING, TICKS, CARD_STATES, ELEMENT_KINDS, SETTINGS, LIBRARY, PLACEHOLDERS, MONEY, BRIEF, SITE,
 } as const;

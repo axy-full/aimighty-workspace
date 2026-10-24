@@ -280,6 +280,29 @@ test("Attach a brief reads a PDF or a text file on this device into the box; any
   await noSideScroll(page);
 });
 
+/* Owner, 24 Oct 2026 (item 6): until document reading ships, the reader's limits are said in words where a brief is attached, at every size (rule 7). */
+test("Attach a brief says the reader's limits in words beside it, at every size, and nothing scrolls sideways", async ({ page }, info) => {
+  await account(page);
+  await forbidPaidWork(page);
+  await trayRendering(page, null);
+  if (isCompact(info)) await openPhoneHome(page); else await openHome(page);
+  const attach = page.getByTestId("home-attach");
+  const hint = page.getByTestId("home-attach-hint");
+  await hint.scrollIntoViewIfNeeded();
+  await expect(attach).toBeVisible();
+  await expect(hint).toBeVisible();
+  await expect(hint).toHaveText("Up to 20 MB and 400 pages of text. Scanned pages read once document reading ships.");
+  /* Under the Attach control, inside the box, and inside the window. */
+  const [a, h, box] = await Promise.all([attach.boundingBox(), hint.boundingBox(), page.getByTestId("home-box").boundingBox()]);
+  expect(h!.y).toBeGreaterThanOrEqual(a!.y + a!.height - 1);
+  expect(h!.x).toBeGreaterThanOrEqual(box!.x - 1);
+  expect(h!.x + h!.width).toBeLessThanOrEqual(box!.x + box!.width + 1);
+  expect(h!.x + h!.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "the page scrolls sideways").toBe(true);
+  if (!isCompact(info)) await noSideScroll(page);
+  expect(await smallText(page, ".gx-header, .gx-toast"), "text under 12px").toEqual([]);
+});
+
 test("references added on Home are filed into the project a template makes, before its board opens", async ({ page }, info) => {
   test.skip(info.project.name !== DESKTOP, "one desktop");
   const { headers } = await account(page);

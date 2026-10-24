@@ -105,6 +105,13 @@ test("Guest Home on: Home signed out, and every action that thinks or spends ope
   expect(text).not.toMatch(/Your projects|Waiting for you|\bcr\b|thinking|\$\d/);
   await expect(page.getByTestId("home-start")).toHaveText("Start");
   await expect(page.getByTestId("guest-sample-card")).toContainText("A 15-second film");
+  /* Owner, 24 Oct 2026 (item 6): the reader's limits are said in words under Attach a brief, as on Home, inside the box. */
+  const hint = page.getByTestId("home-attach-hint");
+  await expect(hint).toHaveText("Up to 20 MB and 400 pages of text. Scanned pages read once document reading ships.");
+  const [attachAt, hintAt, boxAt] = await Promise.all([page.getByTestId("home-attach").boundingBox(), hint.boundingBox(), page.getByTestId("home-box").boundingBox()]);
+  expect(hintAt!.y).toBeGreaterThanOrEqual(attachAt!.y + attachAt!.height - 1);
+  expect(hintAt!.x).toBeGreaterThanOrEqual(boxAt!.x - 1);
+  expect(hintAt!.x + hintAt!.width).toBeLessThanOrEqual(boxAt!.x + boxAt!.width + 1);
   await floors(page, info, "guest Home");
   await shot(page, info, "G1-guest-home");
 
