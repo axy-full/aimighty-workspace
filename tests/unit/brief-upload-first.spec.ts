@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
-import { MAX_CHAT_BYTES, MAX_REFERENCE_BYTES, capSizeWords, uploadCapBytes, uploadCapProblem, uploadCapWords } from "../../lib/uploadCaps";
+import { MAX_CHAT_BYTES, MAX_REFERENCE_BYTES, UPLOAD_CHUNK_BYTES, capSizeWords, uploadCapBytes, uploadCapProblem, uploadCapWords, uploadChunkLimit, uploadChunkProblem, uploadPurposeOf } from "../../lib/uploadCaps";
 import * as reservations from "../../lib/uploadReservations";
 import { uploadFile, type UploadedFile } from "../../lib/uploadClient";
 import { claimUploadEnvelope } from "../../lib/uploadRecovery";
@@ -72,6 +72,28 @@ test("the pre-check at the boundaries: empty refused, the cap itself accepted, o
   /* A 1 GB file is a fine brief and too big a reference. */
   expect(uploadCapProblem({ size: GB }, "chat")).toBeNull();
   expect(uploadCapProblem({ size: GB }, "reference")).toBe("References go up to 200 MB.");
+});
+
+test("the chunk route's cap: an index at or past ceil(cap ÷ chunk), or bytes past the cap, is refused; an in-cap upload is not", () => {
+  expect(UPLOAD_CHUNK_BYTES).toBe(3_500_000);
+  expect([uploadChunkLimit("chat"), uploadChunkLimit("reference")]).toEqual([614, 60]);
+  expect(reservations.MAX_UPLOAD_CHUNKS).toBe(uploadChunkLimit("chat"));
+  for (const purpose of ["chat", "reference"] as const) {
+    const limit = uploadChunkLimit(purpose), cap = uploadCapBytes(purpose);
+    /* Every chunk of a file exactly at the cap, sliced the browser's way, is admitted: the last one included. */
+    const count = Math.ceil(cap / UPLOAD_CHUNK_BYTES), lastBytes = cap - (count - 1) * UPLOAD_CHUNK_BYTES;
+    expect(count).toBe(limit);
+    expect(uploadChunkProblem({ index: limit - 1, bytes: lastBytes, sessionBytes: cap - lastBytes, purpose })).toBeNull();
+    expect(uploadChunkProblem({ index: limit, bytes: 1, sessionBytes: 0, purpose })).toBe(uploadCapWords(purpose));
+    expect(uploadChunkProblem({ index: 0, bytes: 2, sessionBytes: cap - 1, purpose })).toBe(uploadCapWords(purpose));
+  }
+  /* A chunk that names no kind is held to the largest cap, as the route always did. */
+  expect(uploadChunkProblem({ index: 613, bytes: 1, sessionBytes: 0 })).toBeNull();
+  expect(uploadChunkProblem({ index: 614, bytes: 1, sessionBytes: 0 })).toBe("Files go up to 2 GB.");
+  expect([uploadPurposeOf("chat"), uploadPurposeOf("reference"), uploadPurposeOf("other"), uploadPurposeOf(null)]).toEqual(["chat", "reference", null, null]);
+  /* The browser names its kind on every chunk it sends; the route reads it. */
+  expect(readFileSync("lib/uploadClient.ts", "utf8")).toContain('form.append("purpose", current.purpose);');
+  expect(readFileSync("app/api/uploads/chunk/route.ts", "utf8")).toContain('purpose: uploadPurposeOf(form?.get("purpose"))');
 });
 
 test("the upload client refuses a file over its cap before it hashes a byte or sends a request", async () => {

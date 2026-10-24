@@ -2,9 +2,10 @@
 
 import { lockedClaim } from "./usePaidAction";
 import type { UploadedFile } from "./uploadClient";
-import { uploadCapBytes, uploadCapProblem } from "./uploadCaps";
+import { UPLOAD_CHUNK_BYTES, uploadCapBytes, uploadCapProblem } from "./uploadCaps";
 
-export const UPLOAD_CHUNK_BYTES = 3_500_000;
+/* The chunk size lives with the caps (lib/uploadCaps.ts), which the chunk route reads too. */
+export { UPLOAD_CHUNK_BYTES };
 const prefix = "particl:upload:v1:";
 const event = "particl-upload-recovery";
 export type UploadEnvelope = {

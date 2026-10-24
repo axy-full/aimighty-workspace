@@ -333,6 +333,8 @@ export async function resumeUpload(
                 const form = new FormData();
                 form.append("session", current.session);
                 form.append("index", String(index));
+                /* The kind, so the chunk route refuses a chunk past its cap before storing it. */
+                form.append("purpose", current.purpose);
                 form.append(
                   "chunk",
                   file.slice(

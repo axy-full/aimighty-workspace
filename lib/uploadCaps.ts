@@ -15,6 +15,30 @@ export function uploadCapBytes(purpose: UploadPurpose): number {
   return purpose === "chat" ? MAX_CHAT_BYTES : MAX_REFERENCE_BYTES;
 }
 
+/** The browser's chunk size (lib/uploadRecovery.ts slices every upload at it; the chunk route takes up to 4 MiB). */
+export const UPLOAD_CHUNK_BYTES = 3_500_000;
+
+/** How many of the browser's chunks a file at this kind's cap needs: a chunk index at or past this is over the cap. */
+export function uploadChunkLimit(purpose: UploadPurpose): number {
+  return Math.ceil(uploadCapBytes(purpose) / UPLOAD_CHUNK_BYTES);
+}
+
+/**
+ * Why the chunk route refuses this chunk for the session's kind, or null. A chunk names its kind when the client says it
+ * (the browser does); one that does not is held to the largest cap, as before. Refused when its index is at or past the
+ * kind's chunk count, or when it would take the session's bytes past the cap, so nothing goes up that the finish refuses.
+ */
+export function uploadChunkProblem(chunk: { index: number; bytes: number; sessionBytes: number; purpose?: UploadPurpose | null }): string | null {
+  const purpose = chunk.purpose ?? "chat";
+  if (chunk.index >= uploadChunkLimit(purpose) || chunk.sessionBytes + chunk.bytes > uploadCapBytes(purpose)) return uploadCapWords(purpose);
+  return null;
+}
+
+/** A chunk form's `purpose` field: the kind it names, or null for anything else. */
+export function uploadPurposeOf(value: unknown): UploadPurpose | null {
+  return value === "chat" || value === "reference" ? value : null;
+}
+
 /** A cap in words: whole gigabytes as GB, anything smaller in MB (binary units, as the caps are). */
 export function capSizeWords(bytes: number): string {
   const gb = bytes / 1024 ** 3;
