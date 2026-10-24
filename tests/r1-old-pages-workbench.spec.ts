@@ -84,7 +84,9 @@ async function landed(page: Page, from: string, params: Record<string, string>, 
   const redirect = first?.request().redirectedFrom();
   expect(redirect, `${from} redirects`).not.toBeNull();
   expect(redirect?.redirectedFrom(), `${from} is one hop`).toBeNull();
-  const url = new URL(page.url());
+  /* The redirect's own target, not the address now: on a phone the shell turns `make=` into its own `screen=make` as soon as it
+     hydrates (components/graphite/phone/PhoneApp.tsx), which can land before goto resolves. */
+  const url = new URL(first!.url());
   expect(url.pathname, from).toBe("/suites");
   for (const [key, value] of Object.entries(params)) expect(url.searchParams.get(key), `${from}: ${key}`).toBe(value);
   for (const dead of ["shell", "new", "stage"]) expect(url.searchParams.has(dead), `${from}: ${dead} is gone`).toBe(false);
