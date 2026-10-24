@@ -53,6 +53,7 @@ async function load() {
     "./db": db,
     "./limits": limits,
     "./archive": await import("../../lib/archive"),
+    "./uploadCaps": await import("../../lib/uploadCaps"),
     "./storage": {
       deleteChunks: async (key: string) => {
         if (failDeletion) throw new Error("fixture deletion unavailable");

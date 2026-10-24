@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
+import * as uploadCaps from "../../lib/uploadCaps";
 
 async function client(fetch: typeof globalThis.fetch) {
   const items = new Map<string, string>();
@@ -63,11 +64,11 @@ async function client(fetch: typeof globalThis.fetch) {
   }
   const recovery = module<typeof import("../../lib/uploadRecovery")>(
     "lib/uploadRecovery.ts",
-    { "./usePaidAction": { lockedClaim } },
+    { "./usePaidAction": { lockedClaim }, "./uploadCaps": uploadCaps },
   );
   const upload = module<typeof import("../../lib/uploadClient")>(
     "lib/uploadClient.ts",
-    { "./uploadRecovery": recovery },
+    { "./uploadRecovery": recovery, "./uploadCaps": uploadCaps },
   );
   return { ...upload, ...recovery, items };
 }

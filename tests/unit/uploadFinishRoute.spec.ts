@@ -53,6 +53,7 @@ async function harness(name: string) {
     "./db": db,
     "./limits": await import("../../lib/limits"),
     "./archive": await import("../../lib/archive"),
+    "./uploadCaps": await import("../../lib/uploadCaps"),
     "./storage": {
       deleteChunks: async (key: string) => void deleted.push("chunks:" + key),
       deleteUpload: async (id: string) => void deleted.push("upload:" + id),
