@@ -8883,6 +8883,349 @@
           ]
         }
       ]
+    },
+    {
+      "providerId": "openai",
+      "pricedAt": "2026-10-24",
+      "id": "openai/gpt-6.1-sol",
+      "name": "GPT-6.1 Sol",
+      "released": 1790640000,
+      "owner": "openai",
+      "type": "language",
+      "description": "GPT-6.1 Sol is OpenAI's reasoning model for complex coding, computer use, and professional work. It accepts text and images, generates text, and supports a 1,050,000-token context window with up to 128,000 output tokens. Configurable reasoning effort, structured outputs, prompt caching, and Responses API tools support multi-step workflows.",
+      "contextWindow": 1050000,
+      "maxTokens": 128000,
+      "pricing": {
+        "input": "0.000002",
+        "input_tiers": [
+          {
+            "cost": "0.000002",
+            "min": 0,
+            "max": 272001
+          },
+          {
+            "cost": "0.000004",
+            "min": 272001
+          }
+        ],
+        "output": "0.00001",
+        "output_tiers": [
+          {
+            "cost": "0.00001",
+            "min": 0,
+            "max": 272001
+          },
+          {
+            "cost": "0.000015",
+            "min": 272001
+          }
+        ],
+        "input_cache_read": "0.0000001",
+        "input_cache_read_tiers": [
+          {
+            "cost": "0.0000001",
+            "min": 0,
+            "max": 272001
+          },
+          {
+            "cost": "0.0000002",
+            "min": 272001
+          }
+        ],
+        "input_cache_write": "0.0000025",
+        "input_cache_write_tiers": [
+          {
+            "cost": "0.0000025",
+            "min": 0,
+            "max": 272001
+          },
+          {
+            "cost": "0.000005",
+            "min": 272001
+          }
+        ],
+        "web_search": "10",
+        "service_tiers": {
+          "flex": {
+            "input": "0.000001",
+            "output": "0.000005",
+            "input_cache_read": "0.00000005",
+            "long_context": {
+              "threshold": 272001,
+              "input": "0.000002",
+              "output": "0.0000075",
+              "input_cache_read": "0.0000001"
+            }
+          },
+          "priority": {
+            "input": "0.000004",
+            "output": "0.00002",
+            "input_cache_read": "0.0000002",
+            "long_context": {
+              "threshold": 272001,
+              "input": "0.000008",
+              "output": "0.00003",
+              "input_cache_read": "0.0000004"
+            }
+          },
+          "ultrafast": {
+            "input": "0.000012",
+            "output": "0.00006",
+            "input_cache_read": "0.0000006",
+            "long_context": {
+              "threshold": 272001,
+              "input": "0.000024",
+              "output": "0.00009",
+              "input_cache_read": "0.0000012"
+            }
+          }
+        },
+        "fast": {
+          "input": "0.000004",
+          "input_tiers": [
+            {
+              "cost": "0.000004",
+              "min": 0,
+              "max": 272001
+            },
+            {
+              "cost": "0.000008",
+              "min": 272001
+            }
+          ],
+          "output": "0.00002",
+          "output_tiers": [
+            {
+              "cost": "0.00002",
+              "min": 0,
+              "max": 272001
+            },
+            {
+              "cost": "0.00003",
+              "min": 272001
+            }
+          ],
+          "input_cache_read": "0.0000002",
+          "input_cache_read_tiers": [
+            {
+              "cost": "0.0000002",
+              "min": 0,
+              "max": 272001
+            },
+            {
+              "cost": "0.0000004",
+              "min": 272001
+            }
+          ],
+          "input_cache_write": "0.000005",
+          "input_cache_write_tiers": [
+            {
+              "cost": "0.000005",
+              "min": 0,
+              "max": 272001
+            },
+            {
+              "cost": "0.00001",
+              "min": 272001
+            }
+          ]
+        },
+        "regional": {
+          "eu": {
+            "input": "0.0000022",
+            "input_tiers": [
+              {
+                "cost": "0.0000022",
+                "min": 0,
+                "max": 272001
+              },
+              {
+                "cost": "0.0000044",
+                "min": 272001
+              }
+            ],
+            "output": "0.000011",
+            "output_tiers": [
+              {
+                "cost": "0.000011",
+                "min": 0,
+                "max": 272001
+              },
+              {
+                "cost": "0.0000165",
+                "min": 272001
+              }
+            ],
+            "input_cache_read": "0.00000011",
+            "input_cache_read_tiers": [
+              {
+                "cost": "0.00000011",
+                "min": 0,
+                "max": 272001
+              },
+              {
+                "cost": "0.00000022",
+                "min": 272001
+              }
+            ],
+            "input_cache_write": "0.00000275",
+            "input_cache_write_tiers": [
+              {
+                "cost": "0.00000275",
+                "min": 0,
+                "max": 272001
+              },
+              {
+                "cost": "0.0000055",
+                "min": 272001
+              }
+            ]
+          },
+          "us": {
+            "input": "0.0000022",
+            "input_tiers": [
+              {
+                "cost": "0.0000022",
+                "min": 0,
+                "max": 272001
+              },
+              {
+                "cost": "0.0000044",
+                "min": 272001
+              }
+            ],
+            "output": "0.000011",
+            "output_tiers": [
+              {
+                "cost": "0.000011",
+                "min": 0,
+                "max": 272001
+              },
+              {
+                "cost": "0.0000165",
+                "min": 272001
+              }
+            ],
+            "input_cache_read": "0.00000011",
+            "input_cache_read_tiers": [
+              {
+                "cost": "0.00000011",
+                "min": 0,
+                "max": 272001
+              },
+              {
+                "cost": "0.00000022",
+                "min": 272001
+              }
+            ],
+            "input_cache_write": "0.00000275",
+            "input_cache_write_tiers": [
+              {
+                "cost": "0.00000275",
+                "min": 0,
+                "max": 272001
+              },
+              {
+                "cost": "0.0000055",
+                "min": 272001
+              }
+            ],
+            "fast": {
+              "input": "0.0000044",
+              "input_tiers": [
+                {
+                  "cost": "0.0000044",
+                  "min": 0,
+                  "max": 272001
+                },
+                {
+                  "cost": "0.0000088",
+                  "min": 272001
+                }
+              ],
+              "output": "0.000022",
+              "output_tiers": [
+                {
+                  "cost": "0.000022",
+                  "min": 0,
+                  "max": 272001
+                },
+                {
+                  "cost": "0.000033",
+                  "min": 272001
+                }
+              ],
+              "input_cache_read": "0.00000022",
+              "input_cache_read_tiers": [
+                {
+                  "cost": "0.00000022",
+                  "min": 0,
+                  "max": 272001
+                },
+                {
+                  "cost": "0.00000044",
+                  "min": 272001
+                }
+              ],
+              "input_cache_write": "0.0000055",
+              "input_cache_write_tiers": [
+                {
+                  "cost": "0.0000055",
+                  "min": 0,
+                  "max": 272001
+                },
+                {
+                  "cost": "0.000011",
+                  "min": 272001
+                }
+              ]
+            }
+          }
+        }
+      },
+      "inputModalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "outputModalities": [
+        "text"
+      ],
+      "tags": [
+        "explicit-caching",
+        "file-input",
+        "implicit-caching",
+        "reasoning",
+        "structured-output",
+        "tool-use",
+        "vision",
+        "web-search",
+        "fast"
+      ],
+      "supportedParameters": [
+        "max_tokens",
+        "temperature",
+        "stop",
+        "tools",
+        "tool_choice",
+        "reasoning",
+        "include_reasoning",
+        "response_format",
+        "structured_outputs"
+      ],
+      "reasoningOptions": [
+        {
+          "type": "effort",
+          "values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        }
+      ],
+      "temperature": true
     }
   ],
   "missing": [],
@@ -9102,5 +9445,8 @@
         ]
       }
     }
+  ],
+  "added": [
+    "openai/gpt-6.1-sol"
   ]
 }

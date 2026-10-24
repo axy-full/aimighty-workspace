@@ -176,6 +176,11 @@ export type CatalogSnapshot = {
    * script carries these over untouched.
    */
   providerPriced?: ProviderPricedEntry[];
+  /**
+   * Language ids added by the snapshot script (--add) that no source file names; every refresh keeps them. One added with --only-add
+   * carries the day it was priced, which may be later than `pricedAt`. lib/catalogOffered.ts reads the OpenAI ones for the Treatment writer.
+   */
+  added?: string[];
 };
 
 /**
