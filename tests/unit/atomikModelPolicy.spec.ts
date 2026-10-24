@@ -39,6 +39,28 @@ test("the planner catalogue is the slots' models, all verified Claude text, and 
   }
 });
 
+test("xAI is not in the Atomik allowlist: the family list is Claude's alone, no Grok id (either spelling) is Atomik's, and a slot set to one is empty", async () => {
+  /* The owner, 24 Oct 2026 (item 14 (a)): "The xAI family leaves the Atomik allowlist in the same PR." Grok stays verified text for the prompt
+     enhancer, and Crew keeps its own engine (a money question, not this allowlist's). */
+  const { ATOMIK_FAMILIES, CLAUDE_MODEL_IDS, atomikModelIds, atomikThinkingSlots, isAtomikModel, thinkingModelEnv } = await import("../../lib/atomikModelPolicy");
+  expect([...ATOMIK_FAMILIES]).toEqual(["anthropic"]);
+  expect(CLAUDE_MODEL_IDS.length).toBeGreaterThan(0);
+  for (const id of CLAUDE_MODEL_IDS) expect(id.startsWith("anthropic/"), id).toBe(true);
+  expect(GROK_IDS.length, "the verified list still holds Grok, so this check can fail").toBeGreaterThan(0);
+  const grok = [...GROK_IDS, ...GROK_IDS.map((id) => id.replace(/^spacexai\//, "xai/"))];
+  for (const id of grok) {
+    expect(CLAUDE_MODEL_IDS, id).not.toContain(id);
+    expect(isAtomikModel(id), id).toBe(false);
+    for (const setting of ["high", "medium", "low"] as const) {
+      const env = { [thinkingModelEnv("high")]: HIGH, [thinkingModelEnv("medium")]: MEDIUM, [thinkingModelEnv("low")]: LOW, [thinkingModelEnv(setting)]: id };
+      expect(atomikThinkingSlots(env)[setting].model, `${setting} = ${id}`).toBeNull();
+      expect(atomikModelIds(env), `${setting} = ${id}`).not.toContain(id);
+    }
+  }
+  /* No configured slot reaches outside Claude. */
+  for (const id of atomikModelIds()) expect(id.startsWith("anthropic/"), id).toBe(true);
+});
+
 test('Gateway reasoning metadata rejects malformed and unknown controls', async () => {
   const { parseReasoningOptions } = await import('../../lib/catalog');
   expect(parseReasoningOptions(null)).toEqual([]);
