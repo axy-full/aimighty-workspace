@@ -3,8 +3,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ASPECTS, BRIEF_MAX, GLYPHS, LENGTHS, appendBrief, draftAspect, draftLength, withAspect, withLength, type HomeDraft } from "./home-model";
 import { BRIEF } from "@/lib/copy";
 import type { UploadedFile } from "@/lib/uploadClient";
-import { attachBrief } from "./attach-brief";
-import { BRIEF_ACCEPT, BRIEF_READER_LIMITS, BriefFileError, readBriefFile } from "./brief-file";
+import { attachBrief, attachProblem } from "./attach-brief";
+import { BRIEF_ACCEPT, BRIEF_READER_LIMITS, readBriefFile } from "./brief-file";
 import { AttachThumbs } from "../AttachThumbs";
 import { LocalTileMedia } from "../LibraryTile";
 
@@ -85,8 +85,7 @@ export function BriefBox({ draft, onDraft, refs, onRefs, briefFile, onBriefFile,
       setStatus(cut ? { tone: "note", text: `Kept the first ${BRIEF_MAX.toLocaleString("en-US")} characters.` } : null);
     } catch (error) {
       if (!mine()) return;
-      const message = error instanceof BriefFileError || error instanceof Error ? error.message : "";
-      setStatus({ tone: "problem", text: message || "This file could not be read. Try again." });
+      setStatus({ tone: "problem", text: attachProblem(error) });
     } finally {
       if (mine()) { reading.current = null; setReadingName(null); setUploading(false); }
     }

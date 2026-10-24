@@ -8,7 +8,7 @@
  * The upload and the reader are handed in, so this file imports neither: it stays free of the upload client for the
  * guest's box, which shares Home's components. Uploads are free: nothing here prices or charges anything.
  */
-import { BRIEF } from "@/lib/copy";
+import { BRIEF, UPLOADS } from "@/lib/copy";
 import { uploadCapProblem } from "@/lib/uploadCaps";
 import type { UploadedFile } from "@/lib/uploadClient";
 import type { StoredFile } from "@/lib/workspace/library";
@@ -59,4 +59,14 @@ export async function attachBrief(file: File, steps: {
 export function startFiles(brief: AttachedBrief | null, refs: readonly File[]): (File | StoredFile)[] {
   if (!brief) return [...refs];
   return [brief.upload ? { file: brief.file, stored: brief.upload } : brief.file, ...refs];
+}
+
+/**
+ * What the box says when Attach a brief stops: a dropped connection (fetch's TypeError: "Failed to fetch", "Load failed",
+ * "NetworkError…") in the product's words, since the saved upload resumes from Uploads; every worded refusal (the server's,
+ * the caps', the reader's) as it is.
+ */
+export function attachProblem(error: unknown): string {
+  if (error instanceof TypeError) return UPLOADS.dropped;
+  return error instanceof Error && error.message ? error.message : "This file could not be read. Try again.";
 }

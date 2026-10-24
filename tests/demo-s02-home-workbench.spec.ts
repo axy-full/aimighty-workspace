@@ -385,6 +385,21 @@ test("Attach a brief over 2 GB is refused at once, naming the cap, and nothing i
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "the page scrolls sideways").toBe(true);
 });
 
+test("Attach a brief whose connection drops says so in words, never the browser's own, and offers Uploads", async ({ page }, info) => {
+  await account(page);
+  await forbidPaidWork(page);
+  await trayRendering(page, null);
+  if (isCompact(info)) await openPhoneHome(page); else await openHome(page);
+  await page.route((url) => url.pathname === "/api/uploads/chunk", (route) => route.abort("internetdisconnected"));
+  await page.getByTestId("home-attach-input").setInputFiles({ name: "brief.txt", mimeType: "text/plain", buffer: Buffer.from("A lighthouse keeper's last night.") });
+  const status = page.getByTestId("home-box-status");
+  await expect(status).toHaveText("Connection dropped. Resume it from Uploads.", { timeout: 30_000 });
+  await expect(status).toHaveAttribute("role", "alert");
+  await expect(page.getByTestId("home-brief-file")).toHaveCount(0);
+  await status.scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "the page scrolls sideways").toBe(true);
+});
+
 test("the brief attached on Home is filed into the project a template makes, never uploaded again", async ({ page }, info) => {
   test.skip(isCompact(info), NO_BOX_ON_A_PHONE);
   test.skip(info.project.name !== DESKTOP, "one desktop");

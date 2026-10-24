@@ -5,7 +5,7 @@ import * as reservations from "../../lib/uploadReservations";
 import { uploadFile, type UploadedFile } from "../../lib/uploadClient";
 import { claimUploadEnvelope } from "../../lib/uploadRecovery";
 import { uploadFilesToProject } from "../../lib/workspace/library";
-import { attachBrief, startFiles } from "../../components/graphite/home/attach-brief";
+import { attachBrief, attachProblem, startFiles } from "../../components/graphite/home/attach-brief";
 import { BriefFileError, briefReadable } from "../../components/graphite/home/brief-file";
 import { MAX_PDF_BYTES } from "../../lib/workbench/screenplay";
 
@@ -179,6 +179,16 @@ test("Attach a brief whose upload fails says why and reads nothing", async () =>
     signal: new AbortController().signal,
   })).rejects.toThrow("Upload request failed (503). Resume it from Uploads.");
   expect(touched).toEqual([]);
+});
+
+test("a dropped connection says so in the product's words; worded refusals stay as they are", () => {
+  for (const browser of ["Failed to fetch", "Load failed", "NetworkError when attempting to fetch resource."])
+    expect(attachProblem(new TypeError(browser))).toBe("Connection dropped. Resume it from Uploads.");
+  expect(attachProblem(new Error("Files go up to 2 GB."))).toBe("Files go up to 2 GB.");
+  expect(attachProblem(new BriefFileError("Use a PDF or text file."))).toBe("Use a PDF or text file.");
+  expect(attachProblem(new Error("Upload request failed (503). Resume it from Uploads."))).toBe("Upload request failed (503). Resume it from Uploads.");
+  expect(attachProblem(new Error(""))).toBe("This file could not be read. Try again.");
+  expect(attachProblem("nope")).toBe("This file could not be read. Try again.");
 });
 
 test("Start files the stored brief into the new project without uploading it again; a brief not up yet goes with the references", async () => {

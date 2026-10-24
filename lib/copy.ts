@@ -167,6 +167,8 @@ export const UPLOADS = {
   empty: "This file is empty.",
   fileCap: "Files go up to {cap}.",
   referenceCap: "References go up to {cap}.",
+  /** The connection dropped mid-upload: the browser's own words ("Failed to fetch") are never shown; Uploads resumes it. */
+  dropped: "Connection dropped. Resume it from Uploads.",
 } as const;
 
 /** The visitor site and "How Particl works" (v31.12–v31.16). */
