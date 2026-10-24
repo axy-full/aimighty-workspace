@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { z } from "zod";
-import { keyFor, redisKey, EXPIRY, MAX_LEASE_MS, SHORT_TTL_S, SLIDING_TTL_S } from "../../lib/redis/keys";
+import { redisKey, EXPIRY, MAX_LEASE_MS, SHORT_TTL_S, SLIDING_TTL_S, type RedisKeyParts } from "../../lib/redis/keys";
+import { runInTenant, type TenantWorkspace } from "../../lib/tenant";
 import { getRedis, redisConfigured, redisStore, type RedisCommands } from "../../lib/redis/client";
 
 /**
@@ -35,6 +36,9 @@ function fakeServer(opts: { fail?: boolean } = {}) {
 }
 
 const WS = "ws_test";
+/* A key as a request in workspace `ws` builds it: the only way to make one. */
+const inWs = (ws: string) => (parts: RedisKeyParts) => runInTenant({ id: ws } as TenantWorkspace, async () => redisKey(parts));
+const keyFor = (ws: string, parts: RedisKeyParts) => inWs(ws)(parts);
 const Shape = z.object({ rows: z.array(z.string()), at: z.number() });
 
 test("unset REDIS_URL: nothing loads, reads answer null, writes are skipped", async () => {
@@ -44,11 +48,11 @@ test("unset REDIS_URL: nothing loads, reads answer null, writes are skipped", as
     expect(redisConfigured()).toBe(false);
     expect(await getRedis()).toBeNull();
     const store = redisStore();
-    const k = keyFor(WS, { kind: "working-set", productionId: "p1", step: "shots", branchId: "trunk" });
+    const k = await keyFor(WS, { kind: "working-set", productionId: "p1", step: "shots", branchId: "trunk" });
     expect(await store.read(k, Shape)).toBeNull();
     expect(await store.write(k, Shape, { rows: ["r1"], at: 1 })).toBe(false);
-    expect(await store.add(keyFor(WS, { kind: "counter", name: "takes_in_flight" }), 1)).toBeNull();
-    expect(await store.take(keyFor(WS, { kind: "lock", name: "shot_4" }), 1000)).toBeNull();
+    expect(await store.add(await keyFor(WS, { kind: "counter", name: "takes_in_flight" }), 1)).toBeNull();
+    expect(await store.take(await keyFor(WS, { kind: "lock", name: "shot_4" }), 1000)).toEqual({ state: "unavailable" });
     process.env.REDIS_URL = "   ";
     expect(redisConfigured()).toBe(false);
   } finally {
@@ -56,12 +60,12 @@ test("unset REDIS_URL: nothing loads, reads answer null, writes are skipped", as
   }
 });
 
-test("a key is the workspace's own, ids only, each part checked by Zod", () => {
-  expect(keyFor(WS, { kind: "working-set", productionId: "p1", step: "shots", branchId: "trunk" }).key).toBe("ws:ws_test:working-set:p1:shots:trunk");
-  expect(keyFor(WS, { kind: "preview", itemId: "it_9" }).key).toBe("ws:ws_test:preview:it_9");
-  expect(keyFor(WS, { kind: "hot", surface: "library", id: "p1" }).key).toBe("ws:ws_test:hot:library:p1");
-  expect(keyFor(WS, { kind: "counter", name: "house_spend_day" }).key).toBe("ws:ws_test:counter:house_spend_day");
-  /* Words, separators, paths, an unknown step or surface, an extra field, another workspace's prefix smuggled in: all refused. */
+test("a key is the request's own workspace, ids only, each part checked by Zod", async () => {
+  expect((await keyFor(WS, { kind: "working-set", productionId: "p1", step: "shots", branchId: "trunk" })).key).toBe("ws:ws_test:working-set:p1:shots:trunk");
+  expect((await keyFor(WS, { kind: "preview", itemId: "it_9" })).key).toBe("ws:ws_test:preview:it_9");
+  expect((await keyFor(WS, { kind: "hot", surface: "library", id: "p1" })).key).toBe("ws:ws_test:hot:library:p1");
+  expect((await keyFor("ws_other", { kind: "counter", name: "house_spend_day" })).key).toBe("ws:ws_other:counter:house_spend_day");
+  /* Words, separators, paths, an unknown step or surface, an extra field (another workspace named in the parts), a workspace id that is not an id: all refused. */
   for (const bad of [
     () => keyFor(WS, { kind: "preview", itemId: "the bottle" }),
     () => keyFor(WS, { kind: "preview", itemId: "a:b" }),
@@ -72,7 +76,7 @@ test("a key is the workspace's own, ids only, each part checked by Zod", () => {
     () => keyFor(WS, { kind: "hot", surface: "settings" as "board", id: "p1" }),
     () => keyFor(WS, { kind: "preview", itemId: "i1", workspaceId: "ws_other" } as never),
     () => keyFor("ws:other", { kind: "preview", itemId: "i1" }),
-  ]) expect(bad).toThrow();
+  ]) await expect(bad()).rejects.toThrow();
 });
 
 test("a key needs the request's own workspace: with no tenant there is no key", () => {
@@ -87,7 +91,7 @@ test("every kind has its expiry class: working sets and previews slide, hot read
 test("a sliding key is written for 30 days and renewed by every read", async () => {
   const { server, calls } = fakeServer();
   const store = redisStore(async () => server);
-  const k = keyFor(WS, { kind: "working-set", productionId: "p1", step: "edit", branchId: "trunk" });
+  const k = await keyFor(WS, { kind: "working-set", productionId: "p1", step: "edit", branchId: "trunk" });
   expect(await store.write(k, Shape, { rows: ["r1", "r2"], at: 5 })).toBe(true);
   expect(calls.at(-1)).toEqual({ cmd: "set", args: [k.key, JSON.stringify({ rows: ["r1", "r2"], at: 5 }), "EX", SLIDING_TTL_S] });
   expect(await store.read(k, Shape)).toEqual({ rows: ["r1", "r2"], at: 5 });
@@ -97,7 +101,7 @@ test("a sliding key is written for 30 days and renewed by every read", async () 
 test("a hot read lives a minute and is read without renewing", async () => {
   const { server, calls } = fakeServer();
   const store = redisStore(async () => server);
-  const k = keyFor(WS, { kind: "hot", surface: "board", id: "p1" });
+  const k = await keyFor(WS, { kind: "hot", surface: "board", id: "p1" });
   await store.write(k, Shape, { rows: [], at: 1 });
   expect(calls.at(-1)?.args.slice(2)).toEqual(["EX", SHORT_TTL_S]);
   await store.read(k, Shape);
@@ -107,7 +111,7 @@ test("a hot read lives a minute and is read without renewing", async () => {
 test("Zod on the way in and out: a wrong shape is refused before it is sent, and a stored one that no longer fits reads as null", async () => {
   const { server, data, calls } = fakeServer();
   const store = redisStore(async () => server);
-  const k = keyFor(WS, { kind: "preview", itemId: "i1" });
+  const k = await keyFor(WS, { kind: "preview", itemId: "i1" });
   await expect(store.write(k, Shape, { rows: "r1", at: 1 } as never)).rejects.toThrow();
   expect(calls).toHaveLength(0);
   data.set(k.key, JSON.stringify({ rows: [1], at: "x" }));
@@ -119,20 +123,25 @@ test("Zod on the way in and out: a wrong shape is refused before it is sent, and
 test("a counter has no expiry and moves by whole numbers; a lock leases at most ten minutes and is released only by its holder", async () => {
   const { server, calls } = fakeServer();
   const store = redisStore(async () => server);
-  const c = keyFor(WS, { kind: "counter", name: "takes_in_flight" });
+  const c = await keyFor(WS, { kind: "counter", name: "takes_in_flight" });
   expect(await store.add(c, 2)).toBe(2);
   expect(await store.add(c, -1)).toBe(1);
   await expect(store.add(c, 0.5)).rejects.toThrow();
   await expect(store.write(c, z.number(), 3)).rejects.toThrow();
   expect(calls.some((x) => x.cmd === "set" && x.args[0] === c.key)).toBe(false);
 
-  const l = keyFor(WS, { kind: "lock", name: "shot_4" });
-  const token = await store.take(l, 60 * 60 * 1000);
-  expect(token).toBeTruthy();
+  const l = await keyFor(WS, { kind: "lock", name: "shot_4" });
+  const lease = await store.take(l, 60 * 60 * 1000);
+  expect(lease.state).toBe("taken");
   expect(calls.at(-1)?.args.slice(2)).toEqual(["PX", MAX_LEASE_MS, "NX"]);
-  expect(await store.take(l, 1000)).toBeNull();
+  expect(await store.take(l, 1000)).toEqual({ state: "held" });
   expect(await store.release(l, "not-the-token")).toBe(false);
-  expect(await store.release(l, token!)).toBe(true);
+  expect(await store.release(l, lease.state === "taken" ? lease.token : "")).toBe(true);
+  /* A lock is released only by its token and a counter is never dropped; a lease is a positive, finite time. */
+  await expect(store.forget(l)).rejects.toThrow();
+  await expect(store.forget(c)).rejects.toThrow();
+  await expect(store.take(l, Number.NaN)).rejects.toThrow();
+  await expect(store.take(l, 0)).rejects.toThrow();
   await expect(store.add(l, 1)).rejects.toThrow();
   await expect(store.take(c, 1000)).rejects.toThrow();
 });
@@ -140,10 +149,10 @@ test("a counter has no expiry and moves by whole numbers; a lock leases at most 
 test("Redis down: every operation answers as if it were absent, and nothing throws to the caller", async () => {
   const { server } = fakeServer({ fail: true });
   const store = redisStore(async () => server);
-  const k = keyFor(WS, { kind: "working-set", productionId: "p1", step: "brief", branchId: "trunk" });
+  const k = await keyFor(WS, { kind: "working-set", productionId: "p1", step: "brief", branchId: "trunk" });
   expect(await store.read(k, Shape)).toBeNull();
   expect(await store.write(k, Shape, { rows: [], at: 1 })).toBe(false);
-  expect(await store.add(keyFor(WS, { kind: "counter", name: "n" }), 1)).toBeNull();
-  expect(await store.take(keyFor(WS, { kind: "lock", name: "n" }), 10)).toBeNull();
+  expect(await store.add(await keyFor(WS, { kind: "counter", name: "n" }), 1)).toBeNull();
+  expect(await store.take(await keyFor(WS, { kind: "lock", name: "n" }), 10)).toEqual({ state: "unavailable" });
   expect(await store.forget(k)).toBe(false);
 });

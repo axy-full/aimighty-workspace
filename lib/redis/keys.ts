@@ -10,7 +10,7 @@ import { requireTenant } from "../tenant";
  * argument: code that forgot whose data it is gets no key at all, as db() gets no client. Nothing in a key is a person's words: ids only.
  *
  * Each kind has an expiry class:
- * - "sliding": renewed on every read, kept 30 days past the last one, and evictable beyond that (the server runs allkeys-lru);
+ * - "sliding": renewed on every read, kept 30 days past the last one, and evictable beyond that (under the eviction policy in docs/redis.md);
  * - "short": a hot-read cache entry with a fixed short life;
  * - "lease": a lock, with a life the caller states (capped);
  * - "kept": a counter or limit, written without an expiry (rebuilt from the ledger on any disagreement).
@@ -52,18 +52,19 @@ export const EXPIRY: Record<RedisKeyKind, ExpiryClass> = {
   counter: "kept",
 };
 
-/** A built key: the string Redis sees, and the kind it was built as (so the client applies the kind's expiry). */
-export type RedisKey = { readonly key: string; readonly kind: RedisKeyKind };
+declare const built: unique symbol;
+/** A built key: the string Redis sees, and the kind it was built as (so the client applies the kind's expiry). Only redisKey makes one. */
+export type RedisKey = { readonly key: string; readonly kind: RedisKeyKind; readonly [built]: true };
 
-/** The key for `parts` in `workspaceId`; throws on any shape Zod refuses. */
-export function keyFor(workspaceId: string, parts: RedisKeyParts): RedisKey {
+/** The key for `parts` in `workspaceId`; throws on any shape Zod refuses. Not exported: a key's workspace is always the request's own. */
+function keyFor(workspaceId: string, parts: RedisKeyParts): RedisKey {
   const ws = RedisId.parse(workspaceId);
   const p = RedisKeyParts.parse(parts);
   const tail = p.kind === "working-set" ? [p.productionId, p.step, p.branchId]
     : p.kind === "preview" ? [p.itemId]
     : p.kind === "hot" ? [p.surface, p.id]
     : [p.name];
-  return { key: ["ws", ws, p.kind, ...tail].join(":"), kind: p.kind };
+  return { key: ["ws", ws, p.kind, ...tail].join(":"), kind: p.kind } as RedisKey;
 }
 
 /** The key for `parts` in the request's own workspace (fails closed without one). */
