@@ -4,9 +4,11 @@ import { priceWords, upTo } from "@/lib/shell/price-words";
 import { useDraft } from "@/lib/useDraft";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 import type { ProjectSummary } from "@/lib/workspace/data";
+import { uploadFile, type UploadedFile } from "@/lib/uploadClient";
 import { uploadFilesToProject } from "@/lib/workspace/library";
 import { useWorkspace } from "@/lib/workspace/state";
 import { EMPTY_DRAFT, TEMPLATES, cleanDraft, goalFor, startFigure, startFigureUsd, newProjectFor, reusable, type BoardKind, type HomeDraft, type HomeSeed, type MadeHere, type Template, type TemplateId } from "./home-model";
+import { startFiles, type AttachedBrief } from "./attach-brief";
 import { askAtomik, planningFor, productionOf } from "./start";
 import { useThinkingPrice } from "./use-thinking-price";
 
@@ -60,7 +62,12 @@ export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, ope
   const setDraft = stored.set;
   const clearDraft = stored.clear;
   const [refs, setRefs] = useState<File[]>([]);
-  const [briefFile, setBriefFile] = useState<File | null>(null);
+  /* The attached brief and, once Attach a brief has put it in the Library, its upload's receipt (./attach-brief). */
+  const [brief, setBrief] = useState<AttachedBrief | null>(null);
+  const briefFile = brief?.file ?? null;
+  const setBriefFile = useCallback((file: File | null, upload: UploadedFile | null = null) => setBrief(file ? { file, upload } : null), []);
+  /** Attach a brief's upload: a "chat" upload into the workspace's Library, before any project exists. Free. */
+  const saveBrief = useCallback((file: File, onProgress: (pct: number) => void) => uploadFile(file, "chat", onProgress, { scope }), [scope]);
   const [pending, setPending] = useState<TemplateId | "sample" | "start" | null>(null);
   const [problem, setProblem] = useState("");
   const [startProblem, setStartProblem] = useState("");
@@ -77,7 +84,7 @@ export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, ope
     setDraft((before) => cleanDraft(typeof next === "function" ? next(cleanDraft(before)) : next));
   }, [setDraft]);
 
-  const forget = () => { clearDraft(); setRefs([]); setBriefFile(null); setStarted(null); };
+  const forget = () => { clearDraft(); setRefs([]); setBrief(null); setStarted(null); };
 
   /** Makes the project with what the box holds and files its files: its id and production, or the refusal (said by the caller). */
   const make = async (template: Template, from: HomeDraft = draft): Promise<{ id: string; productionId: string | null } | { error: string }> => {
@@ -85,13 +92,14 @@ export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, ope
     const made = await onCreate(name, seed).catch(() => ({ error: "The project could not be created. Try again." }));
     if ("error" in made) return made;
     rememberMade(scope, { id: made.id, template: template.id, at: Date.now() });
-    const files = [...(briefFile ? [briefFile] : []), ...refs];
+    /* A brief Attach a brief already put in the Library is filed as it is, never uploaded again. */
+    const files = startFiles(brief, refs);
     if (files.length) {
       /* Filed before the board opens, so they are in its Library; one that fails is named, the rest still land. */
       const added = await uploadFilesToProject(scope, made.id, files).catch((cause: unknown) => ({ notes: [cause instanceof Error ? cause.message : "The files could not be added."] }));
       if (added.notes.length) toast(added.notes.join(" "));
       setRefs([]);
-      setBriefFile(null);
+      setBrief(null);
     }
     return { id: made.id, productionId: made.productionId ?? null };
   };
@@ -185,5 +193,5 @@ export function useHomeStart({ scope, projects, onPick, onCreate, onStarter, ope
     }
   };
 
-  return { draft, onDraft, refs, setRefs, briefFile, setBriefFile, pending, problem, startProblem, thinking, retryThinking, figure, figureFor, figureUsdFor, create, start, open, openSample };
+  return { draft, onDraft, refs, setRefs, briefFile, setBriefFile, saveBrief, pending, problem, startProblem, thinking, retryThinking, figure, figureFor, figureUsdFor, create, start, open, openSample };
 }

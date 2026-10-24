@@ -7,6 +7,7 @@ import { refineProvider, CLAUDE_MODEL, TEXT_MODEL } from "@/lib/enhance";
 import { usingBlob } from "@/lib/storage";
 import { IMAGE_LIMITS } from "@/lib/imagemeta";
 import { vendorKey } from "@/lib/vendorKeys";
+import { MAX_CHAT_BYTES } from "@/lib/uploadCaps";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,7 @@ export const GET = withTenant(async function GET() {
       maxImageBytes: IMAGE_LIMITS.maxBytes,
       maxRequestBytes: IMAGE_LIMITS.maxRequestBytes,
       chunkedUploads: true,
-      chunkedMaxBytes: 2 * 1024 * 1024 * 1024,
+      chunkedMaxBytes: MAX_CHAT_BYTES,
       derivesForApi: settings.deriveForApi !== "0",
       namingTemplate: settings.namingTemplate,
     },

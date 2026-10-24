@@ -4,6 +4,7 @@ import { db, ready, id, now } from "./db";
 import { workspaceLimits, quotaVerdict } from "./limits";
 import { deleteChunks, deleteUpload } from "./storage";
 import { archiveAndDelete } from "./archive";
+import { MAX_CHAT_BYTES, MAX_REFERENCE_BYTES, uploadCapBytes, uploadCapWords } from "./uploadCaps";
 
 export const UPLOAD_TTL_MS = 24 * 3600_000;
 /* Longer than the worst finish: a 2 GiB chat upload assembled in the
@@ -11,8 +12,8 @@ export const UPLOAD_TTL_MS = 24 * 3600_000;
    A finish that dies mid-way is reclaimed by an identical retry once it lapses. */
 export const UPLOAD_LEASE_MS = 20 * 60_000;
 export const CHUNK_LEASE_MS = 5 * 60_000;
-export const MAX_REFERENCE_BYTES = 200 * 1024 * 1024;
-export const MAX_CHAT_BYTES = 2 * 1024 * 1024 * 1024;
+/* The caps live in lib/uploadCaps.ts, which the browser reads too, so the client refuses what this finish would. */
+export { MAX_CHAT_BYTES, MAX_REFERENCE_BYTES };
 export const MAX_UPLOAD_CHUNKS = Math.ceil(MAX_CHAT_BYTES / 3_500_000);
 const MAX_SESSIONS = 32;
 const initialized = new WeakMap<Client, Promise<void>>();
@@ -413,16 +414,8 @@ export async function beginUploadFinish(
       (total, chunk) => total + Number(chunk.bytes),
       0,
     );
-    if (
-      !found.prepared &&
-      bytes > (input.purpose === "chat" ? MAX_CHAT_BYTES : MAX_REFERENCE_BYTES)
-    )
-      throw new UploadError(
-        input.purpose === "chat"
-          ? "Chat files top out at 2 GB."
-          : "Reference files top out at 200 MB.",
-        413,
-      );
+    if (!found.prepared && bytes > uploadCapBytes(input.purpose))
+      throw new UploadError(uploadCapWords(input.purpose), 413);
     const lease = randomUUID();
     await tx.execute({
       sql: "UPDATE upload_sessions SET state='assembling',lease=?,lease_until=?,finish_key=?,expires_at=? WHERE id=?",

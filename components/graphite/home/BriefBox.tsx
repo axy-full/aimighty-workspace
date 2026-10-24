@@ -1,6 +1,9 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ASPECTS, BRIEF_MAX, GLYPHS, LENGTHS, appendBrief, draftAspect, draftLength, withAspect, withLength, type HomeDraft } from "./home-model";
+import { BRIEF } from "@/lib/copy";
+import type { UploadedFile } from "@/lib/uploadClient";
+import { attachBrief } from "./attach-brief";
 import { BRIEF_ACCEPT, BRIEF_READER_LIMITS, BriefFileError, readBriefFile } from "./brief-file";
 import { AttachThumbs } from "../AttachThumbs";
 import { LocalTileMedia } from "../LibraryTile";
@@ -22,20 +25,23 @@ export function HomeGlyph({ d }: { d: string }) {
 }
 
 /**
- * "What are we making?" (the master's Home): the brief, Attach a brief (PDF or text, read on this device; the reader's limits
- * said under the row, BRIEF_READER_LIMITS),
+ * "What are we making?" (the master's Home): the brief, Attach a brief (PDF or text: uploaded to the Library first, then
+ * read on this device, ./attach-brief; the reader's limits said under the row, BRIEF_READER_LIMITS),
  * Add references, and the aspect and length chips. Everything here is carried into the project a template
  * makes. The footer (Atomik's thinking line and Start) is PR b's. The added files show under the box as Library tiles
  * (components/graphite/AttachThumbs), each an object URL on this device until Start or a template uploads it; pressing one
  * removes it.
  */
-export function BriefBox({ draft, onDraft, refs, onRefs, briefFile, onBriefFile, busy, footer = null }: {
+export function BriefBox({ draft, onDraft, refs, onRefs, briefFile, onBriefFile, onSaveBrief, busy, footer = null }: {
   draft: HomeDraft;
   onDraft: (next: HomeDraft | ((now: HomeDraft) => HomeDraft)) => void;
   refs: File[];
   onRefs: (files: File[]) => void;
   briefFile: File | null;
-  onBriefFile: (file: File | null) => void;
+  /** The attached brief, with its upload's receipt once it is in the Library (Start then files it, never uploads it again). */
+  onBriefFile: (file: File | null, upload?: UploadedFile | null) => void;
+  /** The chunked upload into the workspace's Library (the hook's saveBrief). */
+  onSaveBrief: (file: File, onProgress: (pct: number) => void) => Promise<UploadedFile>;
   busy: boolean;
   footer?: ReactNode;
 }) {
@@ -44,6 +50,7 @@ export function BriefBox({ draft, onDraft, refs, onRefs, briefFile, onBriefFile,
   const reading = useRef<AbortController | null>(null);
   const [status, setStatus] = useState<{ tone: "note" | "problem"; text: string } | null>(null);
   const [readingName, setReadingName] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   useEffect(() => () => reading.current?.abort(), []);
   const aspect = draftAspect(draft);
   const length = draftLength(draft);
@@ -56,22 +63,32 @@ export function BriefBox({ draft, onDraft, refs, onRefs, briefFile, onBriefFile,
     reading.current = controller;
     setStatus(null);
     setReadingName(file.name);
+    setUploading(true);
+    const mine = () => reading.current === controller;
     try {
-      const read = await readBriefFile(file, controller.signal, (page, total) => {
-        if (reading.current === controller) setStatus({ tone: "note", text: `Reading ${file.name} · page ${page} of ${total}` });
+      /* Into the Library first, whatever the reader then makes of it. */
+      const done = await attachBrief(file, {
+        save: onSaveBrief,
+        read: readBriefFile,
+        signal: controller.signal,
+        onProgress: (pct) => { if (mine()) setStatus({ tone: "note", text: `${BRIEF.uploading} ${file.name} · ${pct}%` }); },
+        onSaved: () => { if (mine()) { setUploading(false); setStatus(null); } },
+        onPage: (page, total) => { if (mine()) setStatus({ tone: "note", text: `Reading ${file.name} · page ${page} of ${total}` }); },
       });
-      if (reading.current !== controller) return;
+      if (!mine()) return;
+      onBriefFile(file, done.upload);
+      if (done.text == null) { setStatus({ tone: "note", text: done.note ?? BRIEF.savedUnread }); return; }
+      const text = done.text;
       /* Onto the box as it is now: words typed while the file was read stay. */
-      onDraft((now) => ({ ...now, text: appendBrief(now.text, read.text).text }));
-      onBriefFile(file);
-      const cut = read.cut || appendBrief(draft.text, read.text).cut;
+      onDraft((now) => ({ ...now, text: appendBrief(now.text, text).text }));
+      const cut = done.cut || appendBrief(draft.text, text).cut;
       setStatus(cut ? { tone: "note", text: `Kept the first ${BRIEF_MAX.toLocaleString("en-US")} characters.` } : null);
     } catch (error) {
-      if (reading.current !== controller) return;
+      if (!mine()) return;
       const message = error instanceof BriefFileError || error instanceof Error ? error.message : "";
       setStatus({ tone: "problem", text: message || "This file could not be read. Try again." });
     } finally {
-      if (reading.current === controller) { reading.current = null; setReadingName(null); }
+      if (mine()) { reading.current = null; setReadingName(null); setUploading(false); }
     }
   };
 
@@ -101,7 +118,7 @@ export function BriefBox({ draft, onDraft, refs, onRefs, briefFile, onBriefFile,
         onChange={(e) => onDraft({ ...draft, text: e.target.value })} />
       <div className="gx-hm-row">
         <button type="button" className="gx-hm-btn" onClick={() => briefInput.current?.click()} disabled={locked} aria-busy={readingName ? true : undefined} data-testid="home-attach">
-          <HomeGlyph d={GLYPHS.doc} />{readingName ? "Reading…" : "Attach a brief"}
+          <HomeGlyph d={GLYPHS.doc} />{readingName ? (uploading ? `${BRIEF.uploading}…` : "Reading…") : "Attach a brief"}
         </button>
         <input ref={briefInput} type="file" accept={BRIEF_ACCEPT} hidden tabIndex={-1} data-testid="home-attach-input"
           onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; void attach(file); }} />

@@ -303,6 +303,113 @@ test("Attach a brief says the reader's limits in words beside it, at every size,
   expect(await smallText(page, ".gx-header, .gx-toast"), "text under 12px").toEqual([]);
 });
 
+/** Upload requests the page sends (sessions are opened by the first chunk; finish assembles the file). */
+function uploadsSent(page: Page) {
+  const sent = { chunks: 0, finishes: 0 };
+  page.on("request", (r) => {
+    const path = new URL(r.url()).pathname;
+    if (r.method() === "POST" && path === "/api/uploads/chunk") sent.chunks++;
+    if (r.method() === "POST" && path === "/api/uploads/finish") sent.finishes++;
+  });
+  return sent;
+}
+
+/** The workspace's uploads by name (GET /api/uploads, the Library's References). */
+async function workspaceUploads(page: Page, headers: Record<string, string>): Promise<string[]> {
+  const reply = await page.request.get("/api/uploads?limit=50", { headers });
+  expect(reply.ok(), await reply.text()).toBe(true);
+  return ((await reply.json()).uploads as { filename: string }[]).map((u) => u.filename);
+}
+
+/* Owner, 24 Oct 2026 (item 6): a brief lands in the Library first, whatever the reader on this device then makes of it. */
+test("Attach a brief puts the file in the Library first, then reads it; over 20 MB it still lands and says so", async ({ page }, info) => {
+  test.setTimeout(180_000);
+  const { headers } = await account(page);
+  await forbidPaidWork(page);
+  await trayRendering(page, null);
+  if (isCompact(info)) await openPhoneHome(page); else await openHome(page);
+  const sent = uploadsSent(page);
+  const input = page.getByTestId("home-attach-input");
+  const status = page.getByTestId("home-box-status");
+
+  /* Under the reader's limits: uploaded (one finish), then read into the box as before. */
+  await input.setInputFiles({ name: "treatment.pdf", mimeType: "application/pdf", buffer: screenplayPdf([["INT. LIGHTHOUSE - NIGHT", "The lamp turns."]]) });
+  await expect(page.getByTestId("home-brief")).toHaveValue(/INT\. LIGHTHOUSE - NIGHT[\s\S]*The lamp turns\./, { timeout: 60_000 });
+  await expect(page.getByTestId("home-brief-file")).toContainText("treatment.pdf");
+  expect(sent.finishes).toBe(1);
+  expect(await workspaceUploads(page, headers)).toContain("treatment.pdf");
+  await page.getByTestId("home-brief-file").getByRole("button", { name: "Remove treatment.pdf" }).click();
+  await page.getByTestId("home-brief").fill("");
+
+  /* Over the reader's 20 MB: it still goes up and is in the Library; the reader is not run, and the box says so. */
+  const big = Buffer.concat([Buffer.from("%PDF-1.4\n%"), Buffer.alloc(21 * 1024 * 1024, 32)]);
+  await input.setInputFiles({ name: "series-bible.pdf", mimeType: "application/pdf", buffer: big });
+  await expect(status).toHaveText("Saved to Library. Read once document reading ships.", { timeout: 120_000 });
+  await expect(status).toHaveAttribute("role", "status");
+  await expect(page.getByTestId("home-brief-file")).toContainText("series-bible.pdf");
+  await expect(page.getByTestId("home-brief")).toHaveValue("");
+  expect(sent.finishes).toBe(2);
+  expect(sent.chunks).toBeGreaterThanOrEqual(7);
+  expect(await workspaceUploads(page, headers)).toContain("series-bible.pdf");
+
+  await status.scrollIntoViewIfNeeded();
+  const line = (await status.boundingBox())!;
+  expect(line.x + line.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "the page scrolls sideways").toBe(true);
+  if (!isCompact(info)) await noSideScroll(page);
+  expect(await smallText(page, ".gx-header, .gx-toast"), "text under 12px").toEqual([]);
+  await page.screenshot({ path: `${S02_SHOTS}/home-${info.project.name.replace("workbench-", "")}-brief-saved.png`, animations: "disabled" });
+});
+
+test("Attach a brief over 2 GB is refused at once, naming the cap, and nothing is uploaded", async ({ page }, info) => {
+  await account(page);
+  await forbidPaidWork(page);
+  await trayRendering(page, null);
+  if (isCompact(info)) await openPhoneHome(page); else await openHome(page);
+  const sent = uploadsSent(page);
+  /* No real 2 GB file: a one-line PDF whose size reads 2 GB and a byte, handed to the input as a person's pick would be. */
+  const size = await page.getByTestId("home-attach-input").evaluate((input: HTMLInputElement) => {
+    const file = new File(["%PDF-1.4"], "feature-cut.pdf", { type: "application/pdf" });
+    Object.defineProperty(file, "size", { value: 2 * 1024 ** 3 + 1 });
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    return file.size;
+  });
+  expect(size).toBe(2 * 1024 ** 3 + 1);
+  const status = page.getByTestId("home-box-status");
+  await expect(status).toHaveText("Files go up to 2 GB.");
+  await expect(status).toHaveAttribute("role", "alert");
+  await expect(page.getByTestId("home-brief-file")).toHaveCount(0);
+  expect(sent).toEqual({ chunks: 0, finishes: 0 });
+  await status.scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "the page scrolls sideways").toBe(true);
+});
+
+test("the brief attached on Home is filed into the project a template makes, never uploaded again", async ({ page }, info) => {
+  test.skip(isCompact(info), NO_BOX_ON_A_PHONE);
+  test.skip(info.project.name !== DESKTOP, "one desktop");
+  const { headers } = await account(page);
+  await forbidPaidWork(page);
+  await trayRendering(page, null);
+  await openHome(page);
+  const sent = uploadsSent(page);
+  await page.getByTestId("home-attach-input").setInputFiles({ name: "brief.txt", mimeType: "text/plain", buffer: Buffer.from("A lighthouse keeper's last night.") });
+  await expect(page.getByTestId("home-brief-file")).toContainText("brief.txt");
+  expect(sent).toEqual({ chunks: 1, finishes: 1 });
+
+  const filed: string[] = [];
+  page.on("request", (r) => { if (r.method() === "POST" && new URL(r.url()).pathname === "/api/workbench/library") filed.push(String((r.postDataJSON() as { projectId?: string }).projectId)); });
+  const made = createdBy(page);
+  await page.getByTestId("home-template-film").click();
+  const project = await made;
+  await expect(page).toHaveURL(BOARD.studio, { timeout: 60_000 });
+  expect(filed).toEqual([project.id]);
+  /* Filed, not sent again: still the one upload Attach made. */
+  expect(sent).toEqual({ chunks: 1, finishes: 1 });
+  const library = await page.request.get(`/api/workbench/library?projectId=${encodeURIComponent(project.id)}&source=uploads`, { headers }).then((r) => r.json());
+  expect((library.uploads as { filename: string }[]).map((u) => u.filename)).toEqual(["brief.txt"]);
+});
+
 test("references added on Home are filed into the project a template makes, before its board opens", async ({ page }, info) => {
   test.skip(info.project.name !== DESKTOP, "one desktop");
   const { headers } = await account(page);

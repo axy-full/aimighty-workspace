@@ -11,6 +11,7 @@ import {
   isUploadReceipt,
   type UploadEnvelope,
 } from "./uploadRecovery";
+import { uploadCapProblem } from "./uploadCaps";
 
 export type UploadedFile = {
   id: string;
@@ -457,6 +458,10 @@ export async function uploadFile(
 ): Promise<UploadedFile> {
   if (!options?.scope)
     throw new Error("Sign in to the intended workspace before uploading.");
+  /* A file over its kind's cap is refused here, in words naming the cap, before it is hashed or any chunk is sent:
+     the finish would refuse it after every byte had gone up (lib/uploadCaps.ts, the server's own caps). */
+  const problem = uploadCapProblem(file, purpose);
+  if (problem) throw new Error(problem);
   const entry = await claimUploadEnvelope(options.scope, file, purpose, options.projectId);
   try {
     return await resumeUpload(entry, file, onProgress);
