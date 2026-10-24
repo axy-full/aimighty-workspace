@@ -18,7 +18,6 @@
 .rv-media audio { width: 100%; display: block; }
 .rv-file { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--color-line); border-radius: 8px; font-size: 13.5px; font-weight: 600; }
 .rv-body h2 { font-size: 15px; font-weight: 600; }
-.rv-prompt { font-size: 13.5px; color: var(--gx-text-2); margin-top: 4px; line-height: 1.5; }
 .rv-notes { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .rv-notes li { color: var(--color-ink); }
 .rv-who { font-weight: 600; margin-right: 6px; }

@@ -18,7 +18,7 @@ const original = readFileSync(path.resolve("tests/fixtures/astra-source.mp4"));
 const workspace = { id: "review-studio", legacy: false } as TenantWorkspace;
 
 /** The review media route over a fake private store that honours Range the way Blob does, or over local disk. */
-async function reviewRoute(row: { kind: string; params?: string; bytes?: number | null }, calls: string[] = [], local = false) {
+async function reviewRoute(row: { kind: string; params?: string; bytes?: number | null; shot_code?: string; version?: number }, calls: string[] = [], local = false) {
   const storage = local
     ? loadIsolated<typeof import("../../lib/storage")>("lib/storage.ts", { "./tenant": { currentTenant } }, {
         process: { ...process, env: { ...process.env, BLOB_READ_WRITE_TOKEN: "", STORAGE_BACKEND: "local" } },
@@ -55,7 +55,6 @@ async function reviewRoute(row: { kind: string; params?: string; bytes?: number 
       "@/lib/storage": storage,
       "@/lib/originalMedia": { originalMediaOf },
       "@/lib/mediaRange": { byteRange },
-      "@/lib/downloadName": { downloadFilename: async (_id: string, ext: string) => `SH030_v2.${ext}` },
       "@/lib/contentDisposition": await import("../../lib/contentDisposition"),
       /* An older link: it opens the Approved takes (lib/security/review-link.ts). */
       "@/lib/security/review-link": { scopeOf: async () => "approved" },
@@ -134,7 +133,8 @@ test("the size recorded with the take answers each range without a storage probe
 
 test("a review link reads each kind from its own object and serves it as its own type", async () => {
   const calls: string[] = [];
-  const model = await reviewRoute({ kind: "model", params: "{}" }, calls);
+  /* A client's file is named by what the page shows (the shot and the version), never the workspace's naming template. */
+  const model = await reviewRoute({ kind: "model", params: "{}", shot_code: "SH030", version: 2 }, calls);
   const glb = await model.GET(new Request("https://studio.test/x"), ctx);
   expect(glb.status).toBe(200);
   expect(glb.headers.get("content-type")).toBe("model/gltf-binary");

@@ -77,6 +77,10 @@ async function routes(who: Who) {
     view: load<typeof import("../../app/api/review/[token]/route")>("app/api/review/[token]/route.ts", { ...common, "@/lib/settings": settings, "@/lib/originalMedia": originalMedia }),
     verdict: load<typeof import("../../app/api/review/[token]/verdict/route")>("app/api/review/[token]/verdict/route.ts", common),
     notes: load<typeof import("../../app/api/review/[token]/notes/route")>("app/api/review/[token]/notes/route.ts", common),
+    logo: load<typeof import("../../app/api/review/[token]/logo/route")>("app/api/review/[token]/logo/route.ts", {
+      ...common, "@/lib/settings": settings, "@/lib/serveType": await import("../../lib/serveType"),
+      "@/lib/storage": { openUploadStream: async () => { throw new Error("no logo stored"); } },
+    }),
     media: load<typeof import("../../app/api/review/[token]/media/[genId]/route")>("app/api/review/[token]/media/[genId]/route.ts", {
       ...common, "@/lib/originalMedia": originalMedia,
       "@/lib/storage": {
@@ -275,5 +279,75 @@ test("a client link and a share link are built on APP_ORIGIN when it is set (beh
     expect((await share.json()).url).toMatch(/^https:\/\/app\.example\.test\/review\//);
   } finally {
     if (saved === undefined) delete env.APP_ORIGIN; else env.APP_ORIGIN = saved;
+  }
+});
+
+/*
+ * Every client-facing route, for both kinds of link (a Crew review link and an older Approved-takes link), probed with
+ * the same leak list and the exact "1234" rule: the page's data, a comment, a decision, a take's bytes and its file
+ * name, the logo, and every refusal, before and after the link is withdrawn. The client page (app/review/[token])
+ * draws only what these routes return; its metadata (layout.tsx) reads only the production's and workspace's names,
+ * which the page already shows.
+ */
+test("every client-facing route, on both kinds of link, leaks no prompt, person, team note, other link's words, engine, balance or other production", async () => {
+  await seed();
+  const { runInTenant } = await import("../../lib/tenant");
+  const { db } = await import("../../lib/db");
+  await runInTenant(A, () => db().batch([
+    /* A team note signed by a member on an Approved take, and a 3D take whose workspace file name would carry the engine. */
+    "INSERT OR IGNORE INTO notes(id,gen_id,user_id,text,created_at) VALUES('n_team','g_approved','member','TEAM ONLY REMARK',7)",
+    `INSERT OR IGNORE INTO generations(id,kind,provider,model,prompt,params,status,created_by,created_at,updated_at,project_id,shot_id,version,review_state,deleted)
+     VALUES('g_model','model','mock','mock-model','SECRET PROMPT g_model','{"glb":true}','succeeded','member',2,2,'prod_one','shot_3',2,'approved',0)`,
+  ], "write"));
+  const who: Who = { mode: "session", ws: A, userId: "owner", name: "Owner Person", role: "owner", bearer: "" };
+  const r = await routes(who);
+  const crew = (await (await r.team.POST(scoped(who, `${ORIGIN}/api/review-links`, { method: "POST", body: JSON.stringify({ projectId: "prod_one" }) }), undefined as never)).json()).url.split("/review/")[1];
+  const older = (await (await r.shares.POST(scoped(who, `${ORIGIN}/api/shares`, { method: "POST", body: JSON.stringify({ projectId: "prod_one" }) }), undefined as never)).json()).url.split("/review/")[1];
+  /* Another link's client says something; neither link's own client may read it. */
+  const other = (await (await r.team.POST(scoped(who, `${ORIGIN}/api/review-links`, { method: "POST", body: JSON.stringify({ projectId: "prod_one" }) }), undefined as never)).json()).url.split("/review/")[1];
+  expect((await r.notes.POST(post(`${ORIGIN}/api/review/${other}/notes`, { genId: "g_approved", text: "OTHER LINK WORDS", name: "Other Client" }), ctx(other))).status).toBe(201);
+
+  const LEAKS = ["g_unjudged", "g_changes", "g_deleted", "g_failed", "g_other", "Another production", "g_wsb_take", "Workspace B", "SECRET PROMPT", "internal notes",
+    "Owner Person", "Member Person", "@example.invalid", "credits", "balance", "ws_linka", "owner", "member", "TEAM ONLY REMARK", "Is the walk speed", "OTHER LINK WORDS",
+    "Other Client", "mock-model", "approvedBy", "prompt"];
+  const probe = (where: string, text: string) => {
+    for (const leak of LEAKS) expect(text, `${where}: ${leak}`).not.toContain(leak);
+    expect(text, `${where}: 1234`).not.toMatch(/(?<!\d)1234(?!\d)/);
+  };
+  const said = async (where: string, res: Response) => {
+    const headers = [...res.headers.entries()].map(([k, v]) => `${k}: ${v}`).join("\n");
+    const body = res.headers.get("content-type")?.startsWith("model/") || res.headers.get("content-type")?.startsWith("video/") ? "" : await res.text();
+    probe(where, `${headers}\n${body}`);
+    return res;
+  };
+
+  for (const [kind, token] of [["crew", crew], ["older", older]] as const) {
+    const view = await said(`${kind} view`, await r.view.GET(new Request(`${ORIGIN}/api/review/${token}`), ctx(token)));
+    expect(view.status, kind).toBe(200);
+    await said(`${kind} note`, await r.notes.POST(post(`${ORIGIN}/api/review/${token}/notes`, { genId: "g_approved", text: "Fine by me", name: "Client" }), ctx(token)));
+    await said(`${kind} note refused`, await r.notes.POST(post(`${ORIGIN}/api/review/${token}/notes`, { genId: "g_other", text: "x" }), ctx(token)));
+    await said(`${kind} decision`, await r.verdict.POST(post(`${ORIGIN}/api/review/${token}/verdict`, { genId: "g_approved", verdict: "approved", name: "Client" }), ctx(token)));
+    await said(`${kind} decision refused`, await r.verdict.POST(post(`${ORIGIN}/api/review/${token}/verdict`, { genId: "g_other", verdict: "approved" }), ctx(token)));
+    await said(`${kind} media refused`, await r.media.GET(new Request(`${ORIGIN}/x`), { params: Promise.resolve({ token, genId: "g_other" }) }));
+    const model = await said(`${kind} 3D file`, await r.media.GET(new Request(`${ORIGIN}/x`), { params: Promise.resolve({ token, genId: "g_model" }) }));
+    expect(model.status, kind).toBe(200);
+    expect(model.headers.get("content-disposition"), kind).toContain('filename="Shot-3_v2.glb"');
+    await said(`${kind} logo`, await r.logo.GET(new Request(`${ORIGIN}/x`), ctx(token)));
+    /* The page shows this link's own client comments only: the one just written, and never the team's or another link's. */
+    const again = await (await r.view.GET(new Request(`${ORIGIN}/api/review/${token}`), ctx(token))).json();
+    const approved = again.takes.find((t: { id: string }) => t.id === "g_approved");
+    expect(approved.notes.map((n: { text: string; author: string }) => [n.text, n.author]), kind).toEqual([["Fine by me", "Client"]]);
+    expect(Object.keys(approved).sort(), kind).not.toContain("approvedBy");
+  }
+
+  /* Withdrawn: every route refuses, and the refusals leak nothing either. */
+  const { platformDb } = await import("../../lib/platform");
+  await platformDb().execute({ sql: "UPDATE p_shares SET revoked_at = 1 WHERE revoked_at IS NULL" });
+  for (const token of [crew, older]) {
+    await said("withdrawn view", await r.view.GET(new Request(`${ORIGIN}/api/review/${token}`), ctx(token)));
+    await said("withdrawn note", await r.notes.POST(post(`${ORIGIN}/api/review/${token}/notes`, { genId: "g_approved", text: "x" }), ctx(token)));
+    await said("withdrawn decision", await r.verdict.POST(post(`${ORIGIN}/api/review/${token}/verdict`, { genId: "g_approved", verdict: "approved" }), ctx(token)));
+    await said("withdrawn media", await r.media.GET(new Request(`${ORIGIN}/x`), { params: Promise.resolve({ token, genId: "g_approved" }) }));
+    await said("withdrawn logo", await r.logo.GET(new Request(`${ORIGIN}/x`), ctx(token)));
   }
 });
