@@ -90,7 +90,10 @@ test("the fixture states no vendor's rate: only its price figures differ from th
   const shape = (v: unknown, key = ""): unknown => Array.isArray(v) ? v.map((x) => shape(x))
     : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, shape(x, k)]))
     : priceFigures(v, key).length ? "<figure>" : v;
-  expect(synthetic.data.length).toBe(committed.models.length);
+  /* The fixture is the saved response of the snapshot's day: every snapshot entry, id for id, except one added later (ADDED_LATER,
+     checked below), as the static-catalogue test compares. */
+  expect(synthetic.data.map((m) => m.id).sort()).toEqual(committed.models.map((m) => m.id).filter((id) => !ADDED_LATER.includes(id)).sort());
+  expect(synthetic.data.filter((m) => ADDED_LATER.includes(m.id))).toEqual([]);
   for (const m of synthetic.data) {
     expect(snapshotPricing.has(m.id), m.id).toBe(true);
     // Every key, tier bound, size and flag where the saved response had it; only the figures differ.
