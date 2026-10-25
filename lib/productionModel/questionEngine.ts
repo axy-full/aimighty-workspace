@@ -18,9 +18,12 @@ import type {
  * (film-record-schema, M2) commits them. Nothing here is wired to a button, a route or a registry tool.
  *
  * The marks (R2; film-record-schema A.2 `source`):
- *   - known:   the person said it, a document says it, or an earlier step carried it   ("from the brief · Change");
- *   - assumed: a house default (D8) or Atomik's pick ("Decide for me")                  ("I assumed … · Change");
+ *   - known:   the person said it, a document says it, or an earlier step carried it;
+ *   - assumed: a house default (D8) or Atomik's pick ("Decide for me");
  *   - open:    nothing in the record answers it.
+ * How a closed row reads (owner, 25 Oct 2026, answer 3): a guess reads "I assumed … · Change" until a person confirms it, and a
+ * value carried from an earlier step is a guess here, however that step's row was answered; a person's own answer reads "from
+ * you · Change"; "from the brief · Change" is only for a row a file answered, and the row carries the file's page for the chip.
  *
  * The order (G and H: "orders the open rows by what changes the result or the price most"; the owner, 24 Oct 2026, answer 1:
  * as H says, deterministic, the tie-break written down):
@@ -100,7 +103,7 @@ export const decidedKey = (step: string) => `decided:${step}`;
 export function inMemoryRecord(
   workspaceId: string,
   productionId: string,
-  rows: Readonly<Record<string, { value: string; source: RowSource; carriedFrom?: string; fromStep?: string }>>,
+  rows: Readonly<Record<string, { value: string; source: RowSource; carriedFrom?: string; fromStep?: string; page?: number }>>,
 ): RecordView {
   const held = new Map(
     Object.entries(rows).map(([key, row]) => [
@@ -108,6 +111,7 @@ export function inMemoryRecord(
       Object.freeze({
         workspaceId, value: row.value, source: row.source,
         ...(row.carriedFrom ? { carriedFrom: row.carriedFrom } : {}), ...(row.fromStep ? { fromStep: row.fromStep } : {}),
+        ...(row.page !== undefined ? { page: row.page } : {}),
       }),
     ]),
   );
@@ -211,6 +215,7 @@ function build(
     if (value === null || value === undefined) return null;
     if (value.workspaceId !== workspaceId) throw new QuestionEngineError(NOT_HERE);
     if (!isSource(value.source) || typeof value.value !== "string") throw new QuestionEngineError(NOT_HERE);
+    if (value.page !== undefined && !(Number.isSafeInteger(value.page) && value.page >= 1)) throw new QuestionEngineError(NOT_HERE);
     return value;
   };
   const read = readerOf(view);
@@ -227,13 +232,16 @@ function build(
     const pill = pillsOf(row, read).pills.find((p) => p.id === value) ?? everyPillOf(row).find((p) => p.id === value);
     return pill?.inLine ? QUESTIONS[pill.inLine] : pill?.copy ? QUESTIONS[pill.copy] : value;
   };
-  const stepName = (step: string) => (Object.hasOwn(STEPS, step) ? STEPS[step as keyof typeof STEPS].toLowerCase() : null);
-  /** R2 and H: an assumed row reads "I assumed … · Change"; a known one "from the brief · Change", a carried one naming its step. */
-  const lineOf = (row: ChecklistRow, state: RowState, value: string | null, source: RowSource | null, fromStep: string | null) => {
+  /**
+   * Answer 3 (owner, 25 Oct 2026): a guess (assumed, or carried from an earlier step) reads "I assumed … · Change" until a person
+   * confirms it; the person's own answer reads "from you · Change"; only a row a file answered reads "from the brief · Change".
+   */
+  const lineOf = (row: ChecklistRow, state: RowState, value: string | null, source: RowSource | null) => {
     if (state === "open" || value === null) return null;
-    if (state === "assumed") return `${QUESTIONS.assumed} ${labelOf(row, value)} · ${BUTTONS.change}`;
-    const name = source === "earlier_step" ? (fromStep ? stepName(fromStep) : null) : stepName(checklist.step);
-    return name ? `${QUESTIONS.fromThe} ${name} · ${BUTTONS.change}` : null;
+    if (state === "assumed" || source === "earlier_step") return `${QUESTIONS.assumed} ${labelOf(row, value)} · ${BUTTONS.change}`;
+    if (source === "said") return `${QUESTIONS.fromYou} · ${BUTTONS.change}`;
+    /* What is left is "document": a file answered it. */
+    return `${QUESTIONS.fromThe} ${STEPS.brief.toLowerCase()} · ${BUTTONS.change}`;
   };
 
   /* "Decide for me" was pressed at this step: a person-only row with `decidedShows` reads it, and nothing is written to it. */
@@ -242,11 +250,12 @@ function build(
   const rows: MarkedRow[] = all.map((row) => {
     const value = answered(row);
     if (!value && decided && row.floor && row.personOnly && row.decidedShows !== undefined) {
-      return { key: row.key, floor: true, state: "assumed", value: row.decidedShows, source: "assumed", fromStep: null, line: lineOf(row, "assumed", row.decidedShows, "assumed", null) };
+      return { key: row.key, floor: true, state: "assumed", value: row.decidedShows, source: "assumed", fromStep: null, line: lineOf(row, "assumed", row.decidedShows, "assumed") };
     }
     const state: RowState = value ? STATE_OF[value.source] : "open";
     const fromStep = value?.source === "earlier_step" ? value.fromStep ?? null : null;
-    return { key: row.key, floor: row.floor, state, value: value?.value ?? null, source: value?.source ?? null, fromStep, line: lineOf(row, state, value?.value ?? null, value?.source ?? null, fromStep) };
+    const page = value?.source === "document" && value.page !== undefined ? { page: value.page } : {};
+    return { key: row.key, floor: row.floor, state, value: value?.value ?? null, source: value?.source ?? null, fromStep, line: lineOf(row, state, value?.value ?? null, value?.source ?? null), ...page };
   });
   const isOpen = new Set(rows.filter((row) => row.state === "open").map((row) => row.key));
 

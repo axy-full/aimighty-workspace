@@ -507,7 +507,7 @@ test("answer 6: after Decide for me the spend limit reads \"I assumed no limit �
   expect(later.decideForMe({}).writes).toEqual([]);
   /* Change: the person's own answer still sets it, and then it is theirs. */
   const changed = later.answer("ceiling", "none");
-  expect(changed.rows.find((r) => r.key === "ceiling")).toMatchObject({ state: "known", value: "none", source: "said", line: "from the brief · Change" });
+  expect(changed.rows.find((r) => r.key === "ceiling")).toMatchObject({ state: "known", value: "none", source: "said", line: "from you · Change" });
   /* Without "Decide for me", the spend limit is still asked. */
   expect(engineFor(fixture("synthetic-d11-deck")).answer("real", "no_one").next()?.key).toBe("ceiling");
 });
@@ -558,12 +558,13 @@ test("answer 8: a carried answer's source is \"earlier step\", with the step's n
     }],
     aboveFloor: [],
   };
-  /* Whether the person said the Brief's answer or "Decide for me" assumed it, the carry is "earlier step · Brief". */
-  for (const brief of [engineFor(fixture("menu-only")).answer("material", "media"), engineFor(fixture("menu-only")).decideForMe(above)]) {
+  /* Whether the person said the Brief's answer or "Decide for me" assumed it, the carry is "earlier step · Brief", and at Elements it
+     reads as a guess until a person confirms it (owner, 25 Oct 2026, answer 3). */
+  for (const [brief, carried] of [[engineFor(fixture("menu-only")).answer("material", "media"), "photos"], [engineFor(fixture("menu-only")).decideForMe(above), "made"]] as const) {
     const carry = brief.writes.find((w) => w.reason === "carry");
     expect(carry).toMatchObject({ key: "source", source: "earlier_step", from: "material", fromStep: "brief" });
     const row = questionEngine(elements, brief.record).rows[0];
-    expect(row).toMatchObject({ state: "known", source: "earlier_step", fromStep: "brief", line: "from the brief · Change" });
+    expect(row).toMatchObject({ state: "known", value: carried, source: "earlier_step", fromStep: "brief", line: `I assumed ${carried} · Change` });
   }
   /* The step's name comes from the copy table. */
   expect(QUESTIONS.fromThe).toBe("from the");
@@ -628,6 +629,43 @@ test("answer 3 (b): any member sets the spend limit; lifting a cap already set i
   expect(() => questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", read), undefined, { workspaceId: WS_A, production: false, workspace: false } as unknown as { workspaceId: string; productionId: string; production: boolean; workspace: boolean })).toThrow(QuestionEngineError);
 });
 
+test("answer 3 (a): a guess reads \"I assumed … · Change\" until a person confirms it; their answer reads \"from you\"; only a file's answer reads \"from the brief\", with its page", () => {
+  const above = { "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t" };
+  const elements: Checklist = {
+    filmType: "ad_film",
+    step: "elements",
+    floor: [{
+      key: "source", floor: true, step: "elements", rank: 1, question: "material", shape: "upload", field: false, money: true,
+      pills: { pills: [{ id: "photos" }, { id: "made" }], lit: "made" }, answeredBy: ["brief_material", "drop"], sets: ["training_or_sheet"],
+    }],
+    aboveFloor: [],
+  };
+  const sourceOf = (engine: QuestionEngine) => engine.rows.find((r) => r.key === "source");
+  /* Carried from a person's own Brief answer: still a guess at Elements. Confirmed by the person there: theirs. */
+  const atElements = questionEngine(elements, engineFor(fixture("menu-only")).answer("material", "nothing").record);
+  expect(sourceOf(atElements)).toMatchObject({ value: "made", source: "earlier_step", line: "I assumed made · Change" });
+  expect(sourceOf(atElements.answer("source", "made"))).toMatchObject({ value: "made", source: "said", line: "from you · Change" });
+  expect(sourceOf(atElements.answer("source", "photos"))).toMatchObject({ value: "photos", source: "said", line: "from you · Change" });
+  /* Decide for me's picks read as guesses; a person's answer at the Brief reads "from you". */
+  const decided = engineFor(fixture("menu-only")).decideForMe(above);
+  for (const row of decided.rows.filter((r) => r.source === "assumed")) expect(row.line, row.key).toMatch(/^I assumed .+ · Change$/);
+  expect(engineFor(fixture("menu-only")).answer("material", "nothing").rows.find((r) => r.key === "material")?.line).toBe("from you · Change");
+  /* A row a file answered reads "from the brief", at any step, and carries the file's page for the chip; nothing else carries one. */
+  const filed = (page?: number) => questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", { language: { value: "english", source: "document", ...(page === undefined ? {} : { page }) } }));
+  expect(filed(3).rows.find((r) => r.key === "language")).toMatchObject({ state: "known", source: "document", line: "from the brief · Change", page: 3 });
+  expect(filed().rows.find((r) => r.key === "language")).toMatchObject({ line: "from the brief · Change" });
+  expect(filed().rows.find((r) => r.key === "language")).not.toHaveProperty("page");
+  expect(sourceOf(questionEngine(elements, inMemoryRecord(WS_A, "p", { source: { value: "photos", source: "document", page: 2 } })))).toMatchObject({ line: "from the brief · Change", page: 2 });
+  const saidWithPage = questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", { language: { value: "english", source: "said", page: 4 } }));
+  expect(saidWithPage.rows.find((r) => r.key === "language")).toMatchObject({ line: "from you · Change" });
+  expect(saidWithPage.rows.find((r) => r.key === "language")).not.toHaveProperty("page");
+  /* A page that is not a whole page number is refused like any row the record could not have written, never echoed. */
+  for (const page of [0, -1, 1.5, Number.NaN]) expect(() => filed(page), String(page)).toThrow("That row is not in this workspace.");
+  /* The words are the copy table's. */
+  expect(QUESTIONS.fromYou).toBe("from you");
+  expect(QUESTIONS.assumed).toBe("I assumed");
+});
+
 test("answer 4: Other records a reference to the production's own cap, never a figure; only a person picks it", () => {
   const read = { ...fixture("synthetic-d11-deck").read, real: { value: "no_one", source: "said" as const } };
   const at = (caps?: { production: boolean; workspace: boolean }) =>
@@ -638,7 +676,7 @@ test("answer 4: Other records a reference to the production's own cap, never a f
   for (const caps of [undefined, { production: false, workspace: false }, { production: true, workspace: true }]) {
     for (const role of ["member", "admin", "owner"] as const) {
       const engine = at(caps).answer("ceiling", "production", {}, { role });
-      expect(engine.rows.find((r) => r.key === "ceiling"), JSON.stringify({ caps, role })).toMatchObject({ state: "known", value: "production", source: "said" });
+      expect(engine.rows.find((r) => r.key === "ceiling"), JSON.stringify({ caps, role })).toMatchObject({ state: "known", value: "production", source: "said", line: "from you · Change" });
       expect(engine.writes.filter((w) => w.key === "ceiling").map((w) => w.value)).toEqual(["production"]);
     }
   }
