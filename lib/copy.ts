@@ -211,7 +211,18 @@ export const SITE = {
   howItWorks: "How Particl works",
 } as const;
 
+/** The reading lane's replies (lib/reading/read.ts): fixed words, never the file's text. */
+export const READING = {
+  off: "Reading is off here.",
+  unavailable: "Reading isn't available now. Nothing billed.",
+  tooLarge: "Too large to read.",
+  unreadable: "This file couldn't be read.",
+  noSuch: "No such upload.",
+  noCaller: "Only a signed-in person can read this.",
+  badInput: "Name the upload by its id.",
+} as const;
+
 /** The whole table, by section; the strings test walks it. */
 export const COPY = {
-  STEPS, BUTTONS, MODES, THINKING, TICKS, CARD_STATES, ELEMENT_KINDS, SETTINGS, LIBRARY, PLACEHOLDERS, QUESTIONS, MONEY, SITE,
+  STEPS, BUTTONS, MODES, THINKING, TICKS, CARD_STATES, ELEMENT_KINDS, SETTINGS, LIBRARY, PLACEHOLDERS, QUESTIONS, MONEY, SITE, READING,
 } as const;
