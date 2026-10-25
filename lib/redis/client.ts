@@ -103,7 +103,8 @@ export function redisStore(client: () => Promise<RedisCommands | null> = getRedi
 
     /**
      * Takes the lock at `k` for `ms` (at most ten minutes): "taken" with its token, "held" when another has it, or "unavailable" when there
-     * is no Redis or it did not answer (the caller decides whether to go on without a lock, never Redis).
+     * is no Redis or it did not answer (the caller decides whether to go on without a lock, never Redis). A lock can be evicted with its
+     * lease, so it is never the only guard on a spend: the spend's own guard in Turso must refuse a second charge (docs/redis.md, Eviction).
      */
     async take(k: RedisKey, ms: number): Promise<Lease> {
       if (k.kind !== "lock") throw new Error("only a lock key is taken");
