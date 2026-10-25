@@ -30,10 +30,10 @@ No code reads Redis yet; a later PR wires the first caller.
 
 ## Eviction
 
-The server runs `volatile-lru` (the owner's answer, 25 Oct 2026; SOW v2 §6, §8). Under that policy, memory pressure can evict only keys that carry an expiry:
+The server runs `volatile-lru` (the owner's answer, 25 Oct 2026, which amends SOW v2 §6 and §8). Under that policy, memory pressure can evict only keys that carry an expiry:
 
-- **Working sets, previews and hot reads** carry an expiry. If one is evicted, it is made again from Turso on the next read.
-- **Locks** carry their lease, so they can be evicted too. Losing a lock means at most that two holders overlap. So a lock is never the only guard on a spend. The spend's own guard in Turso (the ledger's reserve and settle, behind a person's approval) must refuse a second charge whether or not a lock was held. Any PR that puts a lock near a spend names that guard and tests the case where the lock is lost. A caller that gets `"unavailable"` from `take` goes on under the same guard, or stops.
-- **Counters** carry no expiry and are never evicted. If memory ever fills with counters alone, writes fail and the client answers null, exactly as when Redis is down.
+- **Working sets, previews and hot reads** carry an expiry. If one is evicted, it is made again from the record or the file on the next read.
+- **Locks** carry their lease, so they can be evicted too. A lost lock means holders may overlap. So a lock is never the only guard on a spend. The spend's own guard in Turso (the ledger's reserve and settle, behind a person's approval) must refuse a second charge whether or not a lock was held. Any PR that puts a lock near a spend names that guard and tests the case where the lock is lost. A caller that gets `"unavailable"` from `take` goes on under the same guard, or stops.
+- **Counters** carry no expiry and are never evicted. If memory ever fills with counters alone, writes are refused and the client answers exactly as when Redis is down (no value, nothing written, a lock "unavailable").
 
 `maxmemory` is sized well above the cached sets, so in normal running nothing is evicted and the policy only ever applies under pressure.
