@@ -1,9 +1,10 @@
-import { catalog } from "./catalog";
+import { catalog, type CatalogModel } from "./catalog";
+import { THINKING } from "./copy";
 import { getSetting } from "./settings";
 import { PaidTextError } from "./paidText";
 import {
   DEFAULT_THINKING, THINKING_UNAVAILABLE, TREATMENT_WRITER_UNAVAILABLE, TreatmentWriterOff,
-  isThinking, offersEffort, selectAtomikThinking, treatmentWriter, type AtomikTurn, type Thinking,
+  THINKING_SETTINGS, isThinking, offersEffort, selectAtomikThinking, thinkingService, treatmentWriter, type AtomikTurn, type Thinking,
 } from "./atomikModelPolicy";
 
 /**
@@ -57,4 +58,24 @@ export async function thinkingRun(turn: TextJobTurn, model: string): Promise<{ o
   } catch {
     return { ours: true };
   }
+}
+
+/** A setting's name and whether it is served, as the platform owner's health detail reads it. */
+export type ThinkingHealth = { line: string; settings: { name: string; state: string }[] };
+
+/**
+ * Whether each Thinking setting is served, by name only (owner, 24 Oct 2026): "Thinking: High · Medium · Low served", or each in turn
+ * ("Thinking: High not set · Medium served · Low served"). Served means what a turn would get (lib/atomikModelPolicy › thinkingService):
+ * the slot names a verified Claude id and the catalogue runs it or a permitted cheaper fallback. Never a model id, an effort or a rate.
+ * `served` stands in for the catalogue; a catalogue that cannot be read serves nothing, as it would for a turn. For GET /api/health,
+ * the platform owner's briefing alone.
+ */
+export async function thinkingHealth(served?: readonly CatalogModel[]): Promise<ThinkingHealth> {
+  const models = served ?? (await catalog().catch(() => [] as CatalogModel[]));
+  const service = thinkingService(models.filter((m) => m.type === "language"));
+  const words = { served: THINKING.served, unset: THINKING.notSet, unserved: THINKING.notServed } as const;
+  const settings = THINKING_SETTINGS.map((setting) => ({ name: THINKING[setting], state: words[service[setting]] }));
+  const same = settings.every(({ state }) => state === settings[0].state);
+  const line = same ? `${settings.map(({ name }) => name).join(" · ")} ${settings[0].state}` : settings.map(({ name, state }) => `${name} ${state}`).join(" · ");
+  return { line: `${THINKING.label}: ${line}`, settings };
 }

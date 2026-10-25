@@ -367,6 +367,62 @@ test("the Treatment writer: unset, a scene rewrite is refused before anything is
   } finally { if (prior === undefined) delete process.env.TREATMENT_WRITER_MODEL; else process.env.TREATMENT_WRITER_MODEL = prior; }
 });
 
+test("the Treatment writer on an id the snapshot added (scripts/ops/snapshot-catalog.mjs --add): accepted, and quoted at its catalogue price; an id the snapshot lacks is refused, nothing billed", async () => {
+  /* The added OpenAI text ids, read from the snapshot's `added` list: no source file and no spec names one. */
+  const { ADDED_OPENAI_TEXT_IDS, PRICED_TEXT_IDS } = await import("../../lib/catalogOffered");
+  const { snapshotModels } = await import("../../lib/catalog");
+  const added = ADDED_OPENAI_TEXT_IDS.find((id) => !(VERIFIED_TEXT_MODEL_IDS as readonly string[]).includes(id))!;
+  expect(added, "the snapshot carries an added OpenAI text id that is not on the verified list").toBeTruthy();
+  expect(PRICED_TEXT_IDS).toContain(added);
+  const entry = snapshotModels().find((m) => m.id === added)!;
+  expect(entry.type).toBe("language");
+
+  const ws = await funded("added-writer");
+  const prior = process.env.TREATMENT_WRITER_MODEL;
+  const { platformDb } = await import("../../lib/platform");
+  const money = async () => Number((await platformDb().execute({ sql: "SELECT COUNT(*) AS n FROM meter_events WHERE workspace_id=?", args: [ws.id] })).rows[0].n);
+  const atomikDocs = await import("../../lib/atomikDocs");
+  const paidText = await import("../../lib/paidText");
+  const treatment = { logline: "A courier on the last night train", setup: {}, scenes: [{ n: 1, title: "Platform", secs: 12, prose: "Rain on the platform." }], updatedAt: 1 };
+  const quoted: { input: Parameters<typeof paidText.quotePaidText>[0]; result: Awaited<ReturnType<typeof paidText.quotePaidText>> }[] = [];
+  const scene = await route("app/api/atomik/treatment/scene/route.ts", {
+    "@/lib/atomikDocs": { ...atomikDocs, getTreatment: async () => treatment },
+    "@/lib/paidText": { ...paidText, quotePaidText: async (input: Parameters<typeof paidText.quotePaidText>[0]) => {
+      const result = await paidText.quotePaidText(input);
+      quoted.push({ input, result });
+      return result;
+    } },
+  });
+  const ask = () => inTenant(ws, async () => answer(await scene.POST!(post("https://particl.test/api/atomik/treatment/scene", { projectId: "p1", n: 1, quoteOnly: true }))));
+  try {
+    /* Bare, as the owner's console names it. */
+    process.env.TREATMENT_WRITER_MODEL = added.slice("openai/".length);
+    const { textJobPick } = await import("../../lib/atomikThinking");
+    expect(await inTenant(ws, () => textJobPick("treatment"))).toMatchObject({ model: added });
+    const quote = await ask();
+    expect(quote.status).toBe(200);
+    expect(quoted.length).toBe(1);
+    const [{ input, result }] = quoted;
+    expect(input.model).toBe(added);
+    /* Through the existing price path: the catalogue entry's prices, the request's room to think, and the text margin. */
+    const { atomikReasoningRequest } = await import("../../lib/atomik-reasoning");
+    const { billCredits } = await import("../../lib/creditTerms");
+    const usd = paidText.textRequestEstimate(entry, input.messages, atomikReasoningRequest(entry, input.effort, input.maxTokens).maxTokens, input.effort !== undefined);
+    expect(usd).toBeGreaterThan(0);
+    expect(result.estimateUsd).toBe(usd);
+    expect(result.estimateCredits).toBe(billCredits(usd, "text"));
+    expect(quote.body.estimateCredits).toBe(result.estimateCredits);
+    expect(quote.body.estimateCredits as number).toBeGreaterThan(0);
+
+    /* An id the snapshot does not hold: refused before anything is quoted, claimed or charged. */
+    process.env.TREATMENT_WRITER_MODEL = "openai/not-in-the-snapshot";
+    await expect(inTenant(ws, () => textJobPick("treatment"))).rejects.toThrow("The Treatment writer isn't connected right now. Nothing billed.");
+    expect(await ask()).toEqual({ status: 503, body: { error: "The Treatment writer isn't connected right now. Nothing billed.", code: "treatment_writer_off", charged: 0, nothingBilled: true } });
+    expect(quoted.length).toBe(1);
+    expect(await money()).toBe(0);
+  } finally { if (prior === undefined) delete process.env.TREATMENT_WRITER_MODEL; else process.env.TREATMENT_WRITER_MODEL = prior; }
+});
+
 test("ideas, shot lists and a scene need the approved ceiling even when the second read of the setting or the catalogue throws, or the setting changed between the reads", async () => {
   const ws = await funded("closed");
   const atomik = await import("../../lib/atomik");

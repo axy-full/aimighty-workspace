@@ -208,6 +208,17 @@ export function selectAtomikThinking(setting: Thinking, turn: AtomikTurn, served
   if (!entry) return null;
   return { thinking: pick.thinking, model: entry.id, entry, ...(offersEffort(entry, pick.effort) ? { effort: pick.effort } : {}) };
 }
+/** Whether a setting is served: its slot names a verified Claude id and the catalogue runs it (or a permitted cheaper fallback); "unset" when the slot is null. */
+export type ThinkingService = "served" | "unset" | "unserved";
+/**
+ * Each setting as a turn at that setting would find it in `served` (the catalogue): the slot is not set, or selectAtomikThinking finds
+ * nothing to run it, or it is served. Asked as a plan turn, which runs at the setting itself (thinkingFor). Says no model and no effort.
+ */
+export function thinkingService(served: readonly CatalogModel[]): Record<Thinking, ThinkingService> {
+  const slots = atomikThinkingSlots();
+  return Object.fromEntries(THINKING_SETTINGS.map((setting) => [setting,
+    !slots[setting].model ? "unset" : selectAtomikThinking(setting, "plan", served) ? "served" : "unserved"])) as Record<Thinking, ThinkingService>;
+}
 /** The four rates a fallback must not exceed, each per token: input, output, cache read, cache write. */
 const RATES = ["input", "output", "input_cache_read", "input_cache_write"] as const;
 type Rates = Partial<Record<(typeof RATES)[number], number>>;

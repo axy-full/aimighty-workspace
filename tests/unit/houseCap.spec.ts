@@ -795,11 +795,10 @@ test("/admin shows the new standing: after a raise and after a lowering the desk
     expect(await noteHouseSpend(spent, under)).toBe(false);
     expect(await warned()).toBe(marked);
 
-    /* /admin's cap cell and the platform console's sheet both show that line, read-only, under the cap's figure. */
+    /* /admin's cap cell shows that line, read-only, under the cap's figure (the prototype-12 console's sheet went with that build, 23 Oct 2026). */
     const page = readFileSync("app/(app)/admin/page.tsx", "utf8");
     const cell = page.slice(page.indexOf("function CapCell("), page.indexOf("type Queue = {"));
     expect(cell).toContain("{ main: houseCapUsdText(houseCap.capUsd), sub: houseCapStanding(houseCap),");
-    expect(readFileSync("components/v12/platform/Workspaces.tsx", "utf8")).toContain("<strong>{houseCapStanding(data.houseCap)}</strong>");
     expect(readFileSync("app/api/admin/invites/route.ts", "utf8")).toContain("await houseCapViewFor(houseRow.allowance_usd)");
   } finally {
     await runInTenant(house(), async () => { await meter({ id, kind: "image", engine: "google", model, status: "failed", engineCostUsd: 0 }); });
@@ -822,3 +821,6 @@ test("a customer workspace's reservation is untouched: no house cap read, its ow
   /* No environment name is invented: the figure is the workspace's stored allowance and a constant. */
   expect(readFileSync("lib/houseCap.ts", "utf8")).not.toMatch(/process\.env\.(?!SUPER_ADMIN_EMAIL)/);
 });
+
+/* Moved here when the prototype-12 build was deleted (23 Oct 2026; docs/old-shells.md): the platform console's Workspaces sheet went with it. */
+test.fixme("the platform console's Workspaces sheet shows the house cap's standing line (houseCapStanding), as /admin's cap cell does — no home: the prototype-12 console is deleted; /admin keeps the line (the test above); owner question: does v31.16 bring a console back?", () => {});

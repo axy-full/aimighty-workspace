@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { closePrototypeServer, openPrototype } from "../helpers/redesignShots";
 
-/* The harness itself: the prototype renders offline from design/particl-prototype-12 at both review sizes. */
+/* The harness itself: the design (design/particl-v31.16, tests/helpers/redesignShots.ts) renders offline at the review sizes. */
 test.afterAll(closePrototypeServer);
 
 test("the prototype renders offline", async ({ page }, info) => {

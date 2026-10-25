@@ -23,15 +23,13 @@ const house = (): TenantWorkspace => ({
   /* Room for other spec files' jobs in the same worker: they share this platform database and the house's id. */ concurrency: 50, rendersPerHour: 1000, storageQuotaBytes: null, deletedAt: null,
 } as TenantWorkspace);
 
-test("house: the hold is the engine's dollars with no credits, and the settled charge is what the meter and the take record, shown in the same words", async () => {
+test("house: the hold is the engine's dollars with no credits, and the settled charge is what the meter and the take record", async () => {
   const { runInTenant } = await import("../../lib/tenant");
   const { db, ready } = await import("../../lib/db");
   const { platformDb, platformReady } = await import("../../lib/platform");
   const { reserveGenerationSpend } = await import("../../lib/generationRequests");
   const { writeGenerationOutcome, deliverGenerationSettlement } = await import("../../lib/generationSettlement");
   const { estimateImageCostUsd } = await import("../../lib/vendorPricing");
-  const { fmtRenderPrice, renderState } = await import("../../lib/v12/renderState");
-  const { fmtLedgerUsd } = await import("../../lib/usageLedgerTerms");
   await platformReady();
   const model = "gemini-3.1-flash-image";
   const estimate = estimateImageCostUsd(model, "512", 0)!.net;
@@ -45,7 +43,6 @@ test("house: the hold is the engine's dollars with no credits, and the settled c
     expect(held.status).toBe("running");
     expect(Number(held.engine_cost_usd)).toBe(estimate);
     expect(Number(held.billed_credits ?? 0)).toBe(0);
-    const holdLine = renderState({ id: "gen_house_at_cost", status: "running", kind: "image", model, provider: "google", createdAt: Date.now() - 70_000, price: { amount: Number(held.engine_cost_usd), unit: "usd" } }, Date.now()).money!.text;
     /* Settles at what the engine charged (here a little under its estimate, as a real take can). */
     const charged = Math.round(estimate * 0.9 * 1e6) / 1e6;
     await writeGenerationOutcome({ sql: "UPDATE generations SET status='succeeded',cost_usd=?,stored_url='local-master' WHERE id='gen_house_at_cost'", args: [charged] }, { ...event, status: "succeeded", engineCostUsd: charged });
@@ -56,10 +53,11 @@ test("house: the hold is the engine's dollars with no credits, and the settled c
     expect(Number(settledMeter.engine_cost_usd)).toBe(charged);
     expect(Number(settledMeter.billed_credits ?? 0)).toBe(0);
     expect(Number(settledTake.cost_usd)).toBe(charged);
-    /* The same words for the hold and for what it settled at; the settled figure is the recorded one, not the estimate. */
-    const settledWords = fmtRenderPrice({ amount: Number(settledTake.cost_usd), unit: "usd" });
-    expect(settledWords).toBe(fmtLedgerUsd(charged));
-    expect(holdLine).toBe(`${fmtLedgerUsd(estimate)} held · charged only when it’s ready`);
+    /* The settled figure is the recorded one, not the estimate. */
     expect(Number(held.engine_cost_usd)).not.toBe(Number(settledMeter.engine_cost_usd));
   });
 });
+
+/* Moved here when the prototype-12 build was deleted (23 Oct 2026; docs/old-shells.md): the hold's and the settled charge's words were that
+   build's render card (lib/v12/renderState.ts), which went with it. */
+test.fixme("house: the hold and the settled charge are said in the same words, the hold as \"$… held · charged only when it's ready\" — no home: the prototype-12 render card is deleted (23 Oct 2026); owner question: does v31.16's take card carry it?", () => {});

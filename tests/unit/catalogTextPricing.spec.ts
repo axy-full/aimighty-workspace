@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { textCostUsd, textQuoteCostUsd, type CatalogModel } from '../../lib/catalog';
+import { vendorRatesIn } from '../helpers/vendorFigures';
 
 function model(pricing: CatalogModel['pricing']): CatalogModel {
   return { id: 'google/gemini-3.1-pro-preview', name: 'Planner', owner: 'google', type: 'language',
@@ -7,36 +8,40 @@ function model(pricing: CatalogModel['pricing']): CatalogModel {
 }
 
 test('ordinary, free and input-only base prices retain their existing calculation', () => {
-  expect(textCostUsd(model({ input: '0.000002', output: '0.000012' }), 8_000, 1_800)).toBeCloseTo(.0376, 10);
+  // Made-up rates here and below, wherever an expected cost is worked from them: no catalogue entry has them (checked).
+  expect(vendorRatesIn({ input: '0.00000317', output: '0.0000139' })).toEqual([]);
+  expect(textCostUsd(model({ input: '0.00000317', output: '0.0000139' }), 8_000, 1_800)).toBeCloseTo(8_000 * .00000317 + 1_800 * .0000139, 10);
   expect(textCostUsd(model({ input: '0', output: 0 }), 8_000, 1_800)).toBe(0);
-  expect(textCostUsd(model({ input: .000002 }), 8_000, 0)).toBe(.016);
+  expect(textCostUsd(model({ input: .00000317 }), 8_000, 0)).toBe(8_000 * .00000317);
   expect(textCostUsd(model(null), 8_000, 1_800)).toBeNull();
   expect(textCostUsd(model({}), 8_000, 1_800)).toBeNull();
 });
 
-// Public Gateway snapshot, 2026-09-15. REST min is inclusive; max is exclusive.
+// Tier rules as the public Gateway snapshot of 2026-09-15 has them (made-up prices). REST min is inclusive; max is exclusive.
 // Gemini's native pricing also explicitly keys its output rate to prompt size.
 // https://vercel.com/docs/ai-gateway/sdks-and-apis/rest-api#tiered-pricing
 // https://ai.google.dev/gemini-api/docs/pricing#gemini-3.1-pro-preview
 test('Gemini switches the price of every input and output token above 200k prompt tokens', () => {
-  const m = model({ input: '0.000002', output: '0.000012',
-    input_tiers: [{ cost: '0.000002', min: 0, max: 200001 }, { cost: '0.000004', min: 200001 }],
-    output_tiers: [{ cost: '0.000012', min: 0, max: 200001 }, { cost: '0.000018', min: 200001 }],
+  const m = model({ input: '0.00000317', output: '0.0000139',
+    input_tiers: [{ cost: '0.00000317', min: 0, max: 200001 }, { cost: '0.00000593', min: 200001 }],
+    output_tiers: [{ cost: '0.0000139', min: 0, max: 200001 }, { cost: '0.0000213', min: 200001 }],
   });
-  expect(textCostUsd(m, 200_000, 900)).toBeCloseTo(200_000 * .000002 + 900 * .000012, 10);
-  expect(textCostUsd(m, 200_001, 900)).toBeCloseTo(200_001 * .000004 + 900 * .000018, 10);
+  expect(vendorRatesIn(m.pricing)).toEqual([]);
+  expect(textCostUsd(m, 200_000, 900)).toBeCloseTo(200_000 * .00000317 + 900 * .0000139, 10);
+  expect(textCostUsd(m, 200_001, 900)).toBeCloseTo(200_001 * .00000593 + 900 * .0000213, 10);
   // Large generated output must not select the long-prompt output tier.
-  expect(textCostUsd(m, 10, 200_001)).toBeCloseTo(10 * .000002 + 200_001 * .000012, 10);
+  expect(textCostUsd(m, 10, 200_001)).toBeCloseTo(10 * .00000317 + 200_001 * .0000139, 10);
 });
 
 test('uses exact Gateway boundaries for GPT 5.6 and Astra rather than hardcoding a rounded threshold', () => {
   for (const [threshold, omitMin] of [[272000, false], [272001, true]] as const) {
-    const m = model({ input: .00001, output: .00005,
-      input_tiers: [{ cost: .00001, ...(omitMin ? {} : { min: 0 }), max: threshold }, { cost: .00002, min: threshold }],
-      output_tiers: [{ cost: .00005, ...(omitMin ? {} : { min: 0 }), max: threshold }, { cost: .000075, min: threshold }],
+    const m = model({ input: .0000233, output: .0000619,
+      input_tiers: [{ cost: .0000233, ...(omitMin ? {} : { min: 0 }), max: threshold }, { cost: .0000419, min: threshold }],
+      output_tiers: [{ cost: .0000619, ...(omitMin ? {} : { min: 0 }), max: threshold }, { cost: .0000883, min: threshold }],
     });
-    expect(textCostUsd(m, threshold - 1, 10)).toBeCloseTo((threshold - 1) * .00001 + 10 * .00005, 10);
-    expect(textCostUsd(m, threshold, 10)).toBeCloseTo(threshold * .00002 + 10 * .000075, 10);
+    expect(vendorRatesIn(m.pricing)).toEqual([]);
+    expect(textCostUsd(m, threshold - 1, 10)).toBeCloseTo((threshold - 1) * .0000233 + 10 * .0000619, 10);
+    expect(textCostUsd(m, threshold, 10)).toBeCloseTo(threshold * .0000419 + 10 * .0000883, 10);
   }
 });
 
@@ -78,15 +83,16 @@ test('invalid token counts and overflowing totals never produce a payable price'
 // Direct OpenAI partitions input into ordinary, cache-read and cache-write.
 // Each category uses the tier selected by TOTAL prompt size, not its own size.
 test('cache read/write rates follow the complete context tier and output already includes reasoning', () => {
-  const m = { ...model({ input: .00001, output: .00005, input_cache_read: .000001, input_cache_write: .0000125,
-    input_tiers: [{ cost: .00001, max: 272001 }, { cost: .00002, min: 272001 }],
-    output_tiers: [{ cost: .00005, max: 272001 }, { cost: .000075, min: 272001 }],
-    input_cache_read_tiers: [{ cost: .000001, max: 272001 }, { cost: .000002, min: 272001 }],
-    input_cache_write_tiers: [{ cost: .0000125, max: 272001 }, { cost: .000025, min: 272001 }],
+  const m = { ...model({ input: .0000233, output: .0000619, input_cache_read: .00000193, input_cache_write: .0000289,
+    input_tiers: [{ cost: .0000233, max: 272001 }, { cost: .0000419, min: 272001 }],
+    output_tiers: [{ cost: .0000619, max: 272001 }, { cost: .0000883, min: 272001 }],
+    input_cache_read_tiers: [{ cost: .00000193, max: 272001 }, { cost: .00000379, min: 272001 }],
+    input_cache_write_tiers: [{ cost: .0000289, max: 272001 }, { cost: .0000523, min: 272001 }],
   }), id: 'openai/gpt-6-astra' };
-  expect(textCostUsd(m, 272000, 200, { cacheReadTokens: 200000, cacheWriteTokens: 50000 })).toBeCloseTo(22000 * .00001 + 200000 * .000001 + 50000 * .0000125 + 200 * .00005, 12);
-  expect(textCostUsd(m, 272001, 200, { cacheReadTokens: 200000, cacheWriteTokens: 50000 })).toBeCloseTo(22001 * .00002 + 200000 * .000002 + 50000 * .000025 + 200 * .000075, 12);
-  expect(textQuoteCostUsd(m, 272001, 200, true)).toBeCloseTo(272001 * .000025 + 200 * .000075, 12);
+  expect(vendorRatesIn(m.pricing)).toEqual([]);
+  expect(textCostUsd(m, 272000, 200, { cacheReadTokens: 200000, cacheWriteTokens: 50000 })).toBeCloseTo(22000 * .0000233 + 200000 * .00000193 + 50000 * .0000289 + 200 * .0000619, 12);
+  expect(textCostUsd(m, 272001, 200, { cacheReadTokens: 200000, cacheWriteTokens: 50000 })).toBeCloseTo(22001 * .0000419 + 200000 * .00000379 + 50000 * .0000523 + 200 * .0000883, 12);
+  expect(textQuoteCostUsd(m, 272001, 200, true)).toBeCloseTo(272001 * .0000523 + 200 * .0000883, 12);
   expect(textQuoteCostUsd(m, 272001, 200)).toBe(textCostUsd(m, 272001, 200));
 });
 

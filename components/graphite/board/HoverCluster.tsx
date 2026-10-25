@@ -11,7 +11,7 @@ import type { BoardBox } from "@/lib/board/types";
 const MINI = { w: 150, h: 92 };
 const STEP = 0.1;
 
-export function HoverCluster({ regions, bounds, list, onList, onTidy, views = true, base = 1 }: { regions: readonly BoardBox[]; bounds: BoardBox | null; list: boolean; onList: (list: boolean) => void; onTidy?: () => void; /** The Board | List switch; the new interface has its own view switch. */ views?: boolean; /** The zoom that reads 100 % (a large screen scales the canvas up). */ base?: number }) {
+export function HoverCluster({ regions, bounds, list, onList, onTidy }: { regions: readonly BoardBox[]; bounds: BoardBox | null; list: boolean; onList: (list: boolean) => void; onTidy?: () => void }) {
   const flow = useReactFlow();
   const x = useStore((s) => s.transform[0]), y = useStore((s) => s.transform[1]), zoom = useStore((s) => s.transform[2]);
   const width = useStore((s) => s.width), height = useStore((s) => s.height);
@@ -19,8 +19,7 @@ export function HoverCluster({ regions, bounds, list, onList, onTidy, views = tr
   const area = bounds ? [bounds, view].reduce((a, b) => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.max(a.x + a.w, b.x + b.w) - Math.min(a.x, b.x), h: Math.max(a.y + a.h, b.y + b.h) - Math.min(a.y, b.y) })) : view;
   const scale = Math.min(MINI.w / Math.max(1, area.w), MINI.h / Math.max(1, area.h));
   const at = (box: BoardBox) => ({ left: (box.x - area.x) * scale, top: (box.y - area.y) * scale, width: Math.max(2, box.w * scale), height: Math.max(2, box.h * scale) });
-  /* The pill reads against `base`: on a large screen the canvas opens at 100 %, however large that is. */
-  const zoomTo = (next: number) => void flow.zoomTo(Math.min(2 * base, Math.max(0.25, Math.round(next * 100) / 100)), { duration: 150 });
+  const zoomTo = (next: number) => void flow.zoomTo(Math.min(2, Math.max(0.25, Math.round(next * 100) / 100)), { duration: 150 });
   const panTo = (event: React.PointerEvent<HTMLDivElement>) => {
     const box = event.currentTarget.getBoundingClientRect();
     const cx = area.x + (event.clientX - box.left) / scale, cy = area.y + (event.clientY - box.top) / scale;
@@ -37,16 +36,16 @@ export function HoverCluster({ regions, bounds, list, onList, onTidy, views = tr
       <div className="bd-cluster-row">
         {list ? null : (
           <div className="bd-zoom" role="group" aria-label="Zoom">
-            <button type="button" aria-label="Zoom out" onClick={() => zoomTo(zoom - STEP * base)}>−</button>
-            <button type="button" className="bd-zoom-level" aria-label="Zoom to 100%" data-testid="board-zoom" onClick={() => zoomTo(base)}>{Math.round((zoom / base) * 100)}%</button>
-            <button type="button" aria-label="Zoom in" onClick={() => zoomTo(zoom + STEP * base)}>+</button>
+            <button type="button" aria-label="Zoom out" onClick={() => zoomTo(zoom - STEP)}>−</button>
+            <button type="button" className="bd-zoom-level" aria-label="Zoom to 100%" data-testid="board-zoom" onClick={() => zoomTo(1)}>{Math.round(zoom * 100)}%</button>
+            <button type="button" aria-label="Zoom in" onClick={() => zoomTo(zoom + STEP)}>+</button>
           </div>
         )}
         {list || !onTidy ? null : <button type="button" className="bd-tidy" data-testid="board-tidy" title="Lay the free cards out on the grid, in order" onClick={onTidy}>Tidy</button>}
-        {views ? <div className="gx-seg bd-seg" role="tablist" aria-label="Board or list">
+        <div className="gx-seg bd-seg" role="tablist" aria-label="Board or list">
           <button type="button" role="tab" className="gx-seg-btn" aria-selected={!list} onClick={() => onList(false)}><span>Board</span></button>
           <button type="button" role="tab" className="gx-seg-btn" aria-selected={list} onClick={() => onList(true)} data-testid="board-list-toggle"><span>List</span></button>
-        </div> : null}
+        </div>
       </div>
     </div>
   );

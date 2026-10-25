@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { ASTRA, ASTRA_VENDOR_ID } from '../helpers/runtimeIds';
 import { LOW, MEDIUM } from '../helpers/thinkingSlots';
+import { vendorRatesIn } from '../helpers/vendorFigures';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -32,11 +33,14 @@ process.env.KEYRING_SECRET ??= 'unit-test-keyring-secret-unit-test-keyring';
 /** Test fixture only: a priced vision model (prices are the fixture's, not a real rate card), on the judge's own model (Low): three Claude
     models only (owner, 23 Oct 2026). */
 const model: CatalogModel = { id: LOW, name: 'Claude', owner: 'anthropic', type: 'language', description: '', contextWindow: 1_000_000, maxTokens: 64000,
-  pricing: { input: .0000001, output: .0000003 }, inputModalities: ['text', 'image'], outputModalities: ['text'] };
+  pricing: { input: .000000113, output: .000000379 }, inputModalities: ['text', 'image'], outputModalities: ['text'] };
 const blind: CatalogModel = { ...model, inputModalities: ['text'] };
 /** Test fixture only: a vision model that thinks, priced so its ceiling and its usual use differ by whole credits (the fixture's prices, not a real rate card). */
 /* A pricier thinker is the judge's own model (Low; owner, 22 Oct 2026): a fallback is never dearer than the setting's model. */
-const thinker: CatalogModel = { ...model, id: LOW, tags: ['reasoning'], pricing: { input: .00002, output: .0001 } };
+const thinker: CatalogModel = { ...model, id: LOW, tags: ['reasoning'], pricing: { input: .0000193, output: .000113 } };
+test("the fixtures' made-up rates are no catalogue entry's", () => {
+  for (const m of [model, thinker]) expect(vendorRatesIn(m.pricing)).toEqual([]);
+});
 /** A workspace on the platform's keys: its checks are priced and charged in credits. */
 function workspace(): TenantWorkspace {
   const id = randomUUID();

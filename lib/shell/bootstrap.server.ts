@@ -10,7 +10,6 @@ import { shellEntryRedirect } from "@/lib/signIn";
 import { searchStringOf } from "@/lib/shell/raw-search";
 import { publicActorName } from "@/lib/platformOwnerPrivacy";
 import { newInterfaceFor } from "@/lib/newInterface.server";
-import { lowCreditBaseFor } from "@/lib/v12/lowCredit.server";
 
 /**
  * Who runs the connected Higgsfield account in this workspace, by name, for a
@@ -69,9 +68,7 @@ export async function shellBootstrap(searchParams: Promise<Record<string, string
     owner,
     superAdmin: await isPlatformOwner(ctx.user),
     workspaces: ctx.workspaces ?? [],
-    /* The balance; with the new interface on, also what its low-credit chip measures it against (read-only; none if it
-       can't be read). Off, nothing more is read: customers don't pay for the new queries. */
-    credits: credits && newInterface ? { ...credits, ...(await lowCreditBaseFor(ctx.workspace).catch(() => null)) } : credits,
+    credits,
     models: await runInTenant(ctx.workspace, () => effectiveModels()).catch(() => null),
     setup: (await getPlatformLayer().catch(() => null))?.setup ?? null,
     rates: buildRateTable(creditsApply(ctx.workspace) ? "cr" : "usd"),

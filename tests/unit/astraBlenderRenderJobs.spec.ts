@@ -12,7 +12,7 @@ process.env.TURSO_DATABASE_URL = `file:${path.join(directory, 'primary.db')}`;
 process.env.KEYRING_SECRET ??= 'unit-test-keyring-secret-unit-test-keyring';
 process.env.ENGINE_MOCK = '1';
 process.env.ASTRA_BLENDER_SNAPSHOT_ID = 'snap_verified-test';
-process.env.ASTRA_BLENDER_RATE_CARD = JSON.stringify({ cpuUsdPerHour: 0.128, memoryUsdPerGbHour: 0.0212, egressUsdPerGb: 0.15, createUsd: 0.0000006 });
+process.env.ASTRA_BLENDER_RATE_CARD = JSON.stringify({ cpuUsdPerHour: 0.193, memoryUsdPerGbHour: 0.0339, egressUsdPerGb: 0.119, createUsd: 0.000000713 }); // made-up rates, not the vendor's
 // Self-hosted (off Vercel): the runtime is connected only with all three control-plane credentials.
 // Set per file and restored after it, so later spec files in this worker never see them.
 const RUNTIME_CREDENTIALS = { VERCEL_TOKEN: 'unit-test-token', VERCEL_TEAM_ID: 'team_unit_test', VERCEL_PROJECT_ID: 'prj_unit_test' };
