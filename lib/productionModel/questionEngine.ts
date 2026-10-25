@@ -232,7 +232,6 @@ function build(
     const pill = pillsOf(row, read).pills.find((p) => p.id === value) ?? everyPillOf(row).find((p) => p.id === value);
     return pill?.inLine ? QUESTIONS[pill.inLine] : pill?.copy ? QUESTIONS[pill.copy] : value;
   };
-  const stepName = (step: string) => (Object.hasOwn(STEPS, step) ? STEPS[step as keyof typeof STEPS].toLowerCase() : null);
   /**
    * Answer 3 (owner, 25 Oct 2026): a guess (assumed, or carried from an earlier step) reads "I assumed … · Change" until a person
    * confirms it; the person's own answer reads "from you · Change"; only a row a file answered reads "from the brief · Change".
@@ -241,7 +240,8 @@ function build(
     if (state === "open" || value === null) return null;
     if (state === "assumed" || source === "earlier_step") return `${QUESTIONS.assumed} ${labelOf(row, value)} · ${BUTTONS.change}`;
     if (source === "said") return `${QUESTIONS.fromYou} · ${BUTTONS.change}`;
-    return source === "document" ? `${QUESTIONS.fromThe} ${stepName("brief")} · ${BUTTONS.change}` : null;
+    /* What is left is "document": a file answered it. */
+    return `${QUESTIONS.fromThe} ${STEPS.brief.toLowerCase()} · ${BUTTONS.change}`;
   };
 
   /* "Decide for me" was pressed at this step: a person-only row with `decidedShows` reads it, and nothing is written to it. */
