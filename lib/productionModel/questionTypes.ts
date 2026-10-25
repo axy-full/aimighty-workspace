@@ -1,4 +1,5 @@
 import type { QUESTIONS } from "../copy";
+import type { WorkspaceRole } from "../tenant";
 
 /**
  * The question engine's shapes (Amendment, 22 October 2026 (iii), G "Questions", H and K D1; SOW R2 and D1).
@@ -86,6 +87,12 @@ export type FloorRow = {
    * house default for the spend limit, never write one). As ids, beside `answeredBy`.
    */
   readonly proposedBy?: readonly string[];
+  /**
+   * The values that lift a cap already set (owner, 25 Oct 2026, answer 3 (b): "Any member may set the ceiling at the Brief;
+   * raising it above a set cap is owner or admin"). Where the production or its workspace has a cap (`CapsSet`), only an owner
+   * or admin may choose one of these; anywhere else any member may. The spend limit's today: No limit.
+   */
+  readonly raises?: readonly string[];
   /** An earlier row whose value lights this row's pill, never answering it (see `Prefill`). */
   readonly prefill?: Prefill;
   /** H "Answered by", where the answer is another floor row: pill id → the values it carries. */
@@ -200,3 +207,14 @@ export type Picks = Readonly<Record<string, string>>;
  * Never applied to a person-only row: a spend limit is a person's alone (rule 14).
  */
 export type WorkspaceDefaults = { readonly workspaceId: string; readonly values: Readonly<Record<string, string>> };
+
+/**
+ * Which caps are already set on this production and its workspace (owner, 25 Oct 2026, answer 3 (b)): whether each is set, never
+ * a figure (film-record-schema A.0: the spend limit holds a reference to the cap). `production` is the production's own cap (H's
+ * "Sets: production_cap"); `workspace` is the workspace's monthly limit (H's "Answered by: workspace_monthly_limit"). The engine
+ * reads no money table, so the caller passes them. Bound to one workspace (rule 2) and to this production. Not passed: no cap is set.
+ */
+export type CapsSet = { readonly workspaceId: string; readonly productionId: string; readonly production: boolean; readonly workspace: boolean };
+
+/** The person answering, by their role in the workspace (lib/tenant.ts), where a row's answer depends on it (`raises`). */
+export type Answerer = { readonly role: WorkspaceRole };

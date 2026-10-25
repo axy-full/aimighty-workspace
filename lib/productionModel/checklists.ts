@@ -149,6 +149,9 @@ const BRIEF_FLOOR: readonly FloorRow[] = [
     personOnly: true,
     decidedShows: "none",
     proposedBy: ["house_default"],
+    /* Any member may set the spend limit at the Brief; lifting a cap already set is an owner's or an admin's (owner, 25 Oct 2026,
+       answer 3 (b)). Of today's choices, No limit is the one that lifts a cap. */
+    raises: ["none"],
     answeredBy: ["workspace_monthly_limit"],
     sets: ["production_cap"],
     money: true,

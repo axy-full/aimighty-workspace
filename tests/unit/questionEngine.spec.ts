@@ -567,3 +567,62 @@ test("answer 8: a carried answer's source is \"earlier step\", with the step's n
   /* The step's name comes from the copy table. */
   expect(QUESTIONS.fromThe).toBe("from the");
 });
+
+/* ---- The owner's answers, 25 October 2026 (01:05 IST, answer 3: follow-ups to the core) ---- */
+
+test("answer 3 (b): any member sets the spend limit; lifting a cap already set is an owner's or an admin's; Atomik never sets it", () => {
+  const ceiling = AD_FILM_BRIEF.floor.find((r) => r.key === "ceiling")!;
+  expect(ceiling.raises).toEqual(["none"]);
+  const read = { ...fixture("synthetic-d11-deck").read, real: { value: "no_one", source: "said" as const } };
+  const at = (caps?: { production: boolean; workspace: boolean }) =>
+    questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", read), undefined, caps ? { workspaceId: WS_A, productionId: "p", ...caps } : undefined);
+  const ceilingOf = (engine: QuestionEngine) => engine.rows.find((r) => r.key === "ceiling");
+
+  /* No cap set: any member answers it, as an owner or admin does; and without a role, as before. */
+  for (const role of ["member", "admin", "owner"] as const) {
+    expect(ceilingOf(at({ production: false, workspace: false }).answer("ceiling", "none", {}, { role })), role).toMatchObject({ state: "known", value: "none", source: "said" });
+  }
+  expect(ceilingOf(at().answer("ceiling", "none"))).toMatchObject({ state: "known", source: "said" });
+
+  /* A cap set on the production, or a monthly limit on the workspace: No limit would lift it, so a member is refused, and an
+     answer with no role is refused too. Nothing is written, and the error names the row, never the value. */
+  for (const caps of [{ production: true, workspace: false }, { production: false, workspace: true }, { production: true, workspace: true }]) {
+    const engine = at(caps);
+    for (const by of [{ role: "member" as const }, undefined]) {
+      let message = "";
+      try {
+        engine.answer("ceiling", "none", {}, by);
+      } catch (error) {
+        expect(error).toBeInstanceOf(QuestionEngineError);
+        message = (error as Error).message;
+      }
+      expect(message, JSON.stringify({ caps, by })).toBe("Only an owner or admin can raise the spend limit.");
+      expect(message).not.toContain("none");
+    }
+    expect(engine.writes).toEqual([]);
+    expect(engine.record.get("ceiling")).toBeNull();
+    expect(engine.next()?.key).toBe("ceiling");
+    /* An owner or an admin lifts it: the person's own answer, source "said". */
+    for (const role of ["owner", "admin"] as const) {
+      const lifted = engine.answer("ceiling", "none", {}, { role });
+      expect(ceilingOf(lifted), role).toMatchObject({ state: "known", value: "none", source: "said" });
+      expect(lifted.writes).toEqual([{ workspaceId: WS_A, productionId: "p", key: "ceiling", value: "none", source: "said", reason: "answer" }]);
+    }
+    /* Only the spend limit is held to it: a member still answers every other row. */
+    expect(stateOf(engine.answer("q:tone", "calm", {}, { role: "member" }), "q:tone")).toBe("known");
+
+    /* Atomik and words the caller read are refused as before, whatever role the person has (rule 11, rule 14). */
+    expect(() => engine.decideForMe({ ceiling: "none", "q:tone": "t" })).toThrow("Only a person can choose that answer.");
+    expect(() => engine.answer("q:tone", "calm", { ceiling: "none" }, { role: "admin" })).toThrow("Only a person can choose that answer.");
+    expect(engine.decideForMe({ "q:tone": "t" }).writes.some((w) => w.key === "ceiling")).toBe(false);
+  }
+
+  /* A role this workspace does not have is not an owner or an admin. */
+  expect(() => at({ production: true, workspace: false }).answer("ceiling", "none", {}, { role: "super" } as unknown as { role: "member" })).toThrow(QuestionEngineError);
+  /* Rule 2: another workspace's caps are refused, never read; so is a cap that is not a yes or a no. */
+  expect(() => questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", read), undefined, { workspaceId: WS_B, productionId: "p", production: true, workspace: false })).toThrow("That row is not in this workspace.");
+  expect(() => questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", read), undefined, { workspaceId: WS_A, productionId: "p", production: 1, workspace: false } as unknown as { workspaceId: string; productionId: string; production: boolean; workspace: boolean })).toThrow(QuestionEngineError);
+  /* Another production's caps in the same workspace are refused too: "no cap here" is this production's, never another's. */
+  expect(() => questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", read), undefined, { workspaceId: WS_A, productionId: "p_other", production: false, workspace: false })).toThrow("That row is not in this workspace.");
+  expect(() => questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", read), undefined, { workspaceId: WS_A, production: false, workspace: false } as unknown as { workspaceId: string; productionId: string; production: boolean; workspace: boolean })).toThrow(QuestionEngineError);
+});
