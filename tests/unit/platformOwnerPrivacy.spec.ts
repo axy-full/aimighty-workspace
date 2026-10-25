@@ -375,8 +375,9 @@ test("read time: a lock stored under the owner's address reads Particl support, 
   const { GET } = await route("app/api/review/[token]/route.ts", member);
   const page = await (await GET(new Request(`http://x/api/review/${token}`), { params: Promise.resolve({ token }) })).json();
   expectNoOwner(page);
-  const approved = Object.fromEntries(page.takes.map((t: { id: string; approvedBy: string }) => [t.id, t.approvedBy]));
-  expect(approved).toEqual({ g_owner_name: SUPPORT, g_owner_mail: SUPPORT, g_member: MEMBER.name });
+  /* No one's name reaches a client: neither who approved a take nor anything else about a person (SOW-report #59). */
+  expect(page.takes.map((t: Record<string, unknown>) => "approvedBy" in t)).toEqual([false, false, false]);
+  for (const name of [OWNER.name, OWNER.email, MEMBER.name, SUPPORT]) expect(JSON.stringify(page)).not.toContain(name);
 
   // The mask the team-canvas lock record, treatment drafts and the bible's publisher are read through.
   const { storedActorMaskHere } = await import("../../lib/platformOwnerPrivacy");

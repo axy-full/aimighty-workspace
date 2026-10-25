@@ -87,6 +87,8 @@ const modeNow = (): DollarMode => (typeof window === "undefined" ? CREDITS_MODE 
 /** The shown line when the house has no dollar figure for a quote yet (houseAtCostPrice.spec's rule: never the customer price turned into dollars). */
 export const NO_AT_COST_FIGURE = "—";
 export const NO_AT_COST_TITLE = "Priced at cost once the engine's price is read.";
+/** The hover on a price the house is shown in its own dollars. */
+export const PAYS_AT_COST_TITLE = "Pays at cost";
 
 /** A price's dollars: its own, else (a limit, ceiling or hold) its credits at the credit's price; null when neither is known. */
 function dollarsOf(value: Exclude<PriceValue, { kind: "free" }>, mode: DollarMode): number | null {
@@ -163,7 +165,7 @@ export function creditsUsd(credits: number, creditUsd: number | null | undefined
 export function priceTitle(value: PriceValue | null | undefined, creditUsd: number | null | undefined, mode: DollarMode = modeNow()): string | null {
   if (!isPriceValue(value) || value.kind === "free") return null;
   /* The house's price is already dollars: its hover says what it pays (the new interface's Price says the same), or why there is no figure yet. */
-  if (mode.on) { const usd = dollarsOf(value, mode); return usd === null ? NO_AT_COST_TITLE : usd === 0 ? null : "Pays at cost"; }
+  if (mode.on) { const usd = dollarsOf(value, mode); return usd === null ? NO_AT_COST_TITLE : usd === 0 ? null : PAYS_AT_COST_TITLE; }
   const credits = shownCredits(value);
   if (credits === 0) return null;
   const usd = creditsUsd(credits, creditUsd, value.kind === "up-to");

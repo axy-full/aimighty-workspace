@@ -122,13 +122,16 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
      partway never leaves a production still standing with its renders
      already unfiled and its cast already archived. */
   const deleted = await archiveTransaction(async (tx) => {
-    const [found, elements, library] = await tx.batch([
+    const [found, elements, library, stepsTable] = await tx.batch([
       { sql: `SELECT id FROM projects WHERE id = ?`, args: [id] },
       /* Versions and attributes go through their element, which is why the
          element ids are read first. */
       { sql: `SELECT id FROM elements WHERE project_id = ?`, args: [id] },
       /* The Library's filings table exists once a project library was used. */
       { sql: `SELECT 1 FROM sqlite_master WHERE type='table' AND name='project_library_uploads'`, args: [] },
+      /* A v30 production's steps (the v30 steps store's table) exist only where the switch was used: checked first, as the
+         archive refuses a table that is not there (lib/archive.ts) and a customer workspace has never made this one. */
+      { sql: `SELECT 1 FROM sqlite_master WHERE type='table' AND name='production_steps'`, args: [] },
     ]);
     if (!found.rows.length) return false;
     /* A draft's own project is one person's board: only its owner deletes it. Its takes and identities are then re-filed into a hidden project of the
@@ -162,6 +165,8 @@ export const DELETE = withTenant(async function DELETE(_req: Request, { params }
          to Unfiled: a filing left pointing at a project that is gone would keep the original from
          ever being deleted ("Remove its project filing first" needs the project). */
       ...(library.rows.length ? [{ table: "project_library_uploads", where: `project_id = ?`, args: [id] }] : []),
+      /* Its steps go with it (production_id is the project's own id), held under this workspace only. */
+      ...(stepsTable.rows.length ? [{ table: "production_steps", where: `workspace_id = ? AND production_id = ?`, args: [requireTenant().id, id] }] : []),
       { table: "projects", where: `id = ?`, args: [id] },
     ];
     // Every write in one batch: a few round trips hold the write lock, not dozens.

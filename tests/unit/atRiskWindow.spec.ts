@@ -221,12 +221,11 @@ test("the failed-saves list says at risk or lost with the shared definition, the
   expect(counted?.lost).toBeGreaterThanOrEqual(1);
   const inList = (await listFailedSaves(at + 1)).items;
   expect(inList.filter((i) => !i.lost).map((i) => i.id)).toContain("r71");
-  /* The screen shows the shared label for a lost row and "at risk" for the other. */
-  const screen = readFileSync(path.resolve("components/v12/platform/FailedSaves.tsx"), "utf8");
-  expect(screen).toMatch(/LOST_LABEL/);
-  expect(screen).toMatch(/data-testid="pc-risk-state"/);
   expect(fetched).toEqual([]);
 });
+
+/* Moved here when the prototype-12 build was deleted (23 Oct 2026; docs/old-shells.md): its platform console read these words. */
+test.fixme("the failed-saves screen shows the shared label for a lost row and \"at risk\" for the other — no home: the prototype-12 platform console is deleted (23 Oct 2026) and /admin does not draw failed saves; owner question: does v31.16 or /admin show them?", () => {});
 
 test("the heartbeat reports tried, saved and unsavable beside the net rescued figure, and lost beside at risk", async () => {
   const settings: Record<string, string> = {};
@@ -319,12 +318,9 @@ test("the console shows both counts as \"1 at risk · 2 lost\", each left out at
   expect(atRiskWindow.riskAlarm({ atRisk: 0, lost: 2 }), "lost needs the owner's decision too").toBe(true);
   expect(atRiskWindow.riskAlarm({ atRisk: 1, lost: 0 })).toBe(true);
   expect(atRiskWindow.riskAlarm({ atRisk: 0, lost: 0 })).toBe(false);
-  /* Both screens read the pure words and alarm, and neither keeps a second copy. */
-  const nav = readFileSync(path.resolve("components/v12/platform/PlatformConsole.tsx"), "utf8");
-  const tile = readFileSync(path.resolve("components/v12/platform/Overview.tsx"), "utf8");
-  for (const [name, source] of [["PlatformConsole", nav], ["Overview", tile]]) { expect(source, name).toMatch(/riskWords/); expect(source, name).toMatch(/riskAlarm/); }
-  expect(nav).toMatch(/riskAlarm\(c\) \? \{ n: riskWords\(c\), tone: "bad" \} : null/);
 });
+
+test.fixme("the console's nav badge and Overview tile read riskWords and riskAlarm, with no second copy — no home: the prototype-12 platform console is deleted (23 Oct 2026) and /admin does not draw failed saves; owner question: does v31.16 or /admin show them?", () => {});
 
 test("the overview carries both counts, read from every workspace", async () => {
   const { platformDb, platformReady } = await import("../../lib/platform");

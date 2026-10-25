@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CatalogModel } from "../../lib/catalog";
 import type { TenantUser, TenantWorkspace } from "../../lib/tenant";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 
 const dir = mkdtempSync(path.join(tmpdir(), "particl-paid-entry-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -23,17 +24,6 @@ const model: CatalogModel = {
   maxTokens: 5000,
   pricing: { input: "0.0000013", output: "0.0000029" },
 };
-
-/** The figures in a fixture's pricing that some catalogue entry also has, at any depth (tiers, regions, service tiers included).
-    No fixture in this file may state a vendor's rate (owner, 23 Oct 2026): each is checked to have none. */
-async function vendorRatesIn(pricing: unknown): Promise<number[]> {
-  const { snapshotModels } = await import("../../lib/catalog");
-  const figures = (value: unknown): number[] =>
-    value && typeof value === "object" ? Object.values(value as Record<string, unknown>).flatMap(figures)
-      : Number.isFinite(Number(value)) && Number(value) > 0 && Number(value) < 1 ? [Number(value)] : [];
-  const listed = new Set(snapshotModels().flatMap((m) => figures(m.pricing)));
-  return figures(pricing).filter((n) => listed.has(n));
-}
 
 function workspace(name: string): TenantWorkspace {
   return {
@@ -623,7 +613,7 @@ test("premium reasoning is available within its explicit quote while old unquote
     const { quotePaidText, runPaidText } = await import("../../lib/paidText");
     const premium: CatalogModel = { ...model, id: OPENAI_IDS[0], owner: "openai", maxTokens: 32768,
       pricing: { input: "0.0000301", output: "0.000293" }, tags: ["reasoning"], reasoningOptions: [{ type: "effort", values: ["high"] }] };
-    expect(await vendorRatesIn(premium.pricing)).toEqual([]);
+    expect(vendorRatesIn(premium.pricing)).toEqual([]);
     const request = { ...call, model: premium.id, effort: "high", maxTokens: 4000 };
     const quote = await quotePaidText(request, premium);
     expect(quote.estimateUsd).toBeGreaterThan(1);
@@ -641,7 +631,7 @@ test('legacy direct OpenAI saves cache receipts and price snapshot, retaining un
     const { runPaidText } = await import('../../lib/paidText');
     const { db } = await import('../../lib/db');
     const priced: CatalogModel = { ...model, id: ASTRA, owner: 'openai', pricing: { input: .000000117, output: .00000037, input_cache_read: .000000013, input_cache_write: .000000159 } };
-    expect(await vendorRatesIn(priced.pricing)).toEqual([]);
+    expect(vendorRatesIn(priced.pricing)).toEqual([]);
     let calls = 0;
     const input = { ...call, model: priced.id, id: `direct-cache-${unknown}` };
     const submit = async (request: { body: string }) => {
@@ -672,7 +662,7 @@ test("a TEXT_DIRECT model is quoted at its cold cache ceiling and settled from i
     delete process.env.ENGINE_MOCK; process.env.ANTHROPIC_API_KEY = "test-anthropic-key-never-sent";
     try {
       const claude: CatalogModel = { ...model, id: EFFORT_CLAUDE, owner: "anthropic", pricing: { input: .0000017, output: .0000083, input_cache_read: .00000017, input_cache_write: .0000021 } }; // made-up rates: no catalogue entry has them (asserted below)
-      expect(await vendorRatesIn(claude.pricing)).toEqual([]);
+      expect(vendorRatesIn(claude.pricing)).toEqual([]);
       const direct = { ...call, model: claude.id, id: "text_direct_billed" };
       const gatewayQuote = await quotePaidText(direct, claude);
       process.env.TEXT_DIRECT = "anthropic";
@@ -699,6 +689,6 @@ test("a TEXT_DIRECT model is quoted at its cold cache ceiling and settled from i
     }
   }));
 
-test("no fixture in this file states a vendor's rate", async () => {
-  expect(await vendorRatesIn(model.pricing)).toEqual([]);
+test("no fixture in this file states a vendor's rate", () => {
+  expect(vendorRatesIn(model.pricing)).toEqual([]);
 });

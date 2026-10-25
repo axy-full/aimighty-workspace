@@ -6,16 +6,16 @@ import { db, ready } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import { originalKindOf } from "@/lib/originalMedia";
 import { reviewSet } from "@/lib/security/review-link";
-import { readableActors } from "@/lib/platformOwnerPrivacy";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ token: string }> };
 
 /**
  * What a client review link opens (brief 2.6): a production's Approved
- * takes in shot order, with the notes on each, under the workspace's own
- * name. No session, no login, nothing of the platform's branding — and
- * nothing but the Approved takes of the one production the link names.
+ * takes in shot order, with this link's own client comments on each, under
+ * the workspace's own name. No session, no login, nothing of the platform's
+ * branding, and nothing but the Approved takes of the one production the
+ * link names: no prompt, no member's name, no team note, no internal description.
  */
 export const GET = async function GET(_req: Request, { params }: Ctx) {
   const { token } = await params;
@@ -33,12 +33,11 @@ export const GET = async function GET(_req: Request, { params }: Ctx) {
       const logo = (await getSetting("brandLogoUploadId")) || null;
       return { kind: "review" as const, workspace: { name: workspace.name, logo: logo ? `/api/review/${token}/logo` : null }, production: set.production, takes: set.takes, expiresAt: share.expiresAt };
     }
-    const project = await db().execute({ sql: `SELECT id, name, description FROM projects WHERE id = ? LIMIT 1`, args: [share.projectId] });
+    const project = await db().execute({ sql: `SELECT id, name FROM projects WHERE id = ? LIMIT 1`, args: [share.projectId] });
     if (!project.rows.length) return null;
     const takes = await db().execute({
-      sql: `SELECT g.id, g.kind, g.version, g.created_at, g.prompt, g.params, g.stored_url,
-                   s.code AS shot_code, s.title AS shot_title, s.position AS shot_pos,
-                   g.review_by
+      sql: `SELECT g.id, g.kind, g.version, g.created_at, g.stored_url,
+                   s.code AS shot_code, s.title AS shot_title, s.position AS shot_pos
             FROM generations g LEFT JOIN shots s ON s.id = g.shot_id
             WHERE g.project_id = ? AND g.review_state = 'approved' AND g.deleted = 0 AND g.status = 'succeeded'
             ORDER BY COALESCE(s.position, 1e9), s.code, g.version`,
@@ -47,41 +46,33 @@ export const GET = async function GET(_req: Request, { params }: Ctx) {
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const rows = takes.rows as any[];
     const ids = rows.map((r) => String(r.id));
+    /* As on a Crew review link (lib/security/review-link.ts › reviewSet): this link's own client comments only. Never the
+       team's notes or who wrote them, never another link's comments, never the prompt or who approved a take. */
     const notes = ids.length
       ? await db().execute({
-          sql: `SELECT n.gen_id, n.text, n.created_at, u.name AS author, 0 AS guest FROM notes n JOIN users u ON u.id = n.user_id WHERE n.gen_id IN (${ids.map(() => "?").join(",")})
-                UNION ALL
-                SELECT r.gen_id, r.text, r.created_at, r.guest AS author, 1 AS guest FROM review_notes r WHERE r.gen_id IN (${ids.map(() => "?").join(",")})
-                ORDER BY created_at`,
-          args: [...ids, ...ids],
+          sql: `SELECT gen_id, text, created_at, guest FROM review_notes WHERE share_id = ? AND gen_id IN (${ids.map(() => "?").join(",")}) ORDER BY created_at LIMIT 2000`,
+          args: [share.id, ...ids],
         })
       : { rows: [] as any[] };
     const byGen = new Map<string, { text: string; author: string; guest: boolean; at: number }[]>();
     for (const n of notes.rows as any[]) {
       const k = String(n.gen_id);
-      (byGen.get(k) ?? byGen.set(k, []).get(k)!).push({ text: String(n.text), author: String(n.author ?? "the studio"), guest: Number(n.guest) === 1, at: Number(n.created_at) });
+      (byGen.get(k) ?? byGen.set(k, []).get(k)!).push({ text: String(n.text), author: String(n.guest || "the client"), guest: true, at: Number(n.created_at) });
     }
-    /* Who approved, as a guest may read it: an account id is read through the workspace's users to the name, never output, and the platform owner reads "Particl support" outside the house (lib/platformOwnerPrivacy.ts). */
-    const shown = await readableActors(rows.map((r) => r.review_by));
     const logo = (await getSetting("brandLogoUploadId")) || null;
     const p = project.rows[0] as any;
     return {
       workspace: { name: workspace.name, logo: logo ? `/api/review/${token}/logo` : null },
-      production: { name: String(p.name ?? ""), description: String(p.description ?? "") },
-      takes: rows.map((r) => {
-        const params = ((): Record<string, unknown> => { try { return JSON.parse(r.params || "{}"); } catch { return {}; } })();
-        return {
-          id: String(r.id), kind: originalKindOf(r.kind),
-          shot: r.shot_code ? String(r.shot_code) : null, title: r.shot_title ? String(r.shot_title) : null,
-          version: Number(r.version ?? 1),
-          prompt: String((params.rawPrompt as string | undefined) ?? r.prompt ?? "").split(/\n\s*\n/)[0],
-          approvedBy: shown(r.review_by),
-          media: `/api/review/${token}/media/${r.id}`,
-          notes: byGen.get(String(r.id)) ?? [],
-          /* The starter's sample clip (Big Buck Bunny, CC BY 3.0) carries its credit onto the review link (lib/sampleClip.ts). */
-          ...(isSampleClipUrl(String(r.stored_url ?? "")) ? { credit: SAMPLE_CLIP_CREDIT } : {}),
-        };
-      }),
+      production: { name: String(p.name ?? "") },
+      takes: rows.map((r) => ({
+        id: String(r.id), kind: originalKindOf(r.kind),
+        shot: r.shot_code ? String(r.shot_code) : null, title: r.shot_title ? String(r.shot_title) : null,
+        version: Number(r.version ?? 1),
+        media: `/api/review/${token}/media/${r.id}`,
+        notes: byGen.get(String(r.id)) ?? [],
+        /* The starter's sample clip (Big Buck Bunny, CC BY 3.0) carries its credit onto the review link (lib/sampleClip.ts). */
+        ...(isSampleClipUrl(String(r.stored_url ?? "")) ? { credit: SAMPLE_CLIP_CREDIT } : {}),
+      })),
       expiresAt: share.expiresAt,
     };
   });

@@ -9,13 +9,12 @@
  * - `openSignup`: anyone may create an account without an invitation link. Off, the server refuses a self-serve
  *   sign-up whatever the environment is configured for (lead decision 36).
  * - `guestHome`: a signed-out visitor at "/" sees Home in its guest state instead of today's site (decision 35).
- * - `visitorPages`: with `guestHome` also on, "/?guest=1" shows the new interface's visitor pages
- *   (components/v12/visitor, prototype 12). Off by default (owner, 10 Oct): nothing visitor-facing changes until the
- *   owner turns it on; off, "/?guest=1" is today's Guest Home.
+ * - `visitorPages`: read by nothing since the prototype-12 build was deleted (23 Oct 2026): "/?guest=1" is Guest Home
+ *   whatever it says. Kept as a field so a stored row and the tests that write it still parse; its removal is the owner's call.
  * - `guestWorkspace`: the one workspace whose sample production a guest may read. Nothing else is ever read for a
  *   guest; null means there is no sample to show.
- * - `newInterfaceWorkspaces`: workspaces, besides the platform's own house workspace, that see the interface being
- *   built from design/particl-prototype-12 (lib/newInterface.ts). Empty by default: every customer workspace keeps
+ * - `newInterfaceWorkspaces`: workspaces, besides the platform's own house workspace, that have the new-interface
+ *   switch on (lib/newInterface.ts), behind which v31.16 is to be built. Empty by default: every customer workspace keeps
  *   today's screens.
  */
 export const SITE_ROW = "site";

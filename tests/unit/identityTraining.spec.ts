@@ -12,11 +12,14 @@ process.env.ENGINE_MOCK = "1";
    In a credit workspace GET /api/identities quotes `trainCredits` and leaves
    `trainCostUsd` null; the sheet read only the dollars, showed "0 cr", and
    the run was still billed. */
+/* A training run's engine cost, made up: no step count times any rate in lib/identityPricing.ts gives it. */
+const TRAIN_USD = 4.173;
+
 test("the training price is read in the unit the workspace pays in, and unknown is not zero", () => {
   const credits = { configured: true, minPhotos: 5, trainCostUsd: null, trainCredits: 54 };
-  const dollars = { configured: true, minPhotos: 5, trainCostUsd: 3.6, trainCredits: null };
+  const dollars = { configured: true, minPhotos: 5, trainCostUsd: TRAIN_USD, trainCredits: null };
   expect(trainPrice(credits, true)).toBe(54);
-  expect(trainPrice(dollars, false)).toBe(3.6);
+  expect(trainPrice(dollars, false)).toBe(TRAIN_USD);
   // The other unit's field is not a price in this one: unknown, never 0.
   expect(trainPrice(credits, false)).toBeNull();
   expect(trainPrice(dollars, true)).toBeNull();
@@ -38,16 +41,16 @@ test("only uploaded stills count as training photos; takes and clips do not", ()
 
 test("the approval carries the shown price, and a higher charge is refused", () => {
   expect(trainApproval(54, true)).toEqual({ maxCredits: 54 });
-  expect(trainApproval(3.6, false)).toEqual({ maxUsd: 3.6 });
-  const charge = { credits: 54, usd: 3.6 };
+  expect(trainApproval(TRAIN_USD, false)).toEqual({ maxUsd: TRAIN_USD });
+  const charge = { credits: 54, usd: TRAIN_USD };
   expect(trainApprovalProblem({ maxCredits: 54 }, charge)).toBeNull();
-  expect(trainApprovalProblem({ maxUsd: 3.6 }, charge)).toBeNull();
+  expect(trainApprovalProblem({ maxUsd: TRAIN_USD }, charge)).toBeNull();
   expect(trainApprovalProblem({}, charge)).toBeNull();
   expect(trainApprovalProblem({ maxCredits: 53 }, charge)).toContain("price changed");
   expect(trainApprovalProblem({ maxCredits: 0 }, charge)).toContain("price changed");
   expect(trainApprovalProblem({ maxCredits: "54" }, charge)).toContain("price changed");
   expect(trainApprovalProblem({ maxCredits: 54.5 }, charge)).toContain("price changed");
-  expect(trainApprovalProblem({ maxUsd: 3.59 }, charge)).toContain("price changed");
+  expect(trainApprovalProblem({ maxUsd: TRAIN_USD - 0.01 }, charge)).toContain("price changed");
   // The sheet knows this answer by its exact words, and reads the terms again.
   expect(trainApprovalProblem({ maxCredits: 1 }, charge)).toBe(TRAIN_PRICE_CHANGED);
 });
@@ -81,7 +84,7 @@ const load = (file: string, dependencies: Record<string, unknown>) => {
 const nextServer = () => createRequire(path.resolve("package.json"))("next/server");
 
 test("the train route refuses a run that costs more than the approved price, before any money check", async () => {
-  const usd = 3.6;
+  const usd = TRAIN_USD;
   const started: string[] = [], walls: number[] = [], ticks: ({ by: string; at?: number } | null)[] = [];
   let inCredits = true;
   const route = load("app/api/identities/[id]/train/route.ts", {
@@ -170,7 +173,7 @@ test("a retried New asset hands back the caller's own untrained identity instead
       listIdentities: async () => fixtures,
       updateIdentity: async (id: string, patch: { photos: string[]; description?: string }) => { updated.push({ id, ...patch }); return { ...fixtures.find((f) => f.id === id), ...patch }; },
       createIdentity: async (input: { name: string }) => { created.push(input.name); if (input.name === "Rowan" || input.name === "Tove") throw new Error(`There is already an identity called ${input.name}.`); return { id: "idn_new", name: input.name }; },
-      syncIdentity: async () => ({}), MIN_PHOTOS: 5, MAX_PHOTOS: 40, RECOMMENDED_PHOTOS: "", TRAIN_STEPS: 1500, trainCostUsd: () => 3.6, RENDER_USD_PER_MP: 0.035, TRAINER: "trainer",
+      syncIdentity: async () => ({}), MIN_PHOTOS: 5, MAX_PHOTOS: 40, RECOMMENDED_PHOTOS: "", TRAIN_STEPS: 1500, trainCostUsd: () => TRAIN_USD, RENDER_USD_PER_MP: 0.0213 /* made up, not the vendor's rate */, TRAINER: "trainer",
       identityForBrowser: (i: { loraUrl?: string | null }) => ({ ...i, loraUrl: undefined, trained: Boolean(i.loraUrl) }),
     },
     "@/lib/fal": { falConfigured: () => true },

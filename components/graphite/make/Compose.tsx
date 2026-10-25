@@ -9,22 +9,18 @@ import { CINEMA_BANK } from "@/lib/workspace/cinema-vocabulary";
 import type { ComposerType } from "@/lib/workspace/composer";
 import { useFilmTypeahead } from "../FilmVocabulary";
 import { Glyph, type GlyphName } from "../icons";
-import { priceWords } from "@/lib/shell/price-words";
 import { CheckAgain } from "../CheckAgain";
 import { CHECK_LINE } from "@/lib/demo/sample";
 import { toolName } from "../viral/ViralView";
 import { UPSCALE_NAME } from "./UpscaleTool";
 import { EngineList } from "./EngineList";
-import { MakePriceText, useMakePriceTitle } from "./price";
-import type { MakeModel, MakePrice } from "./use-make";
+import { MakePriceText, useMakePriceTitle, useMakePriceWords } from "./price";
+import type { MakeModel } from "./use-make";
 
 const TYPES: { type: ComposerType; label: string }[] = [{ type: "video", label: "Video" }, { type: "image", label: "Image" }, { type: "audio", label: "Audio" }];
 /* The quick tools under Make (the master's row): Motion transfer, Object swap, Upscale. */
 const QUICK_TOOLS: { tool: MakeTool; glyph: GlyphName }[] = [{ tool: "motion", glyph: "video" }, { tool: "swap", glyph: "swap" }, { tool: "upscale", glyph: "upscale" }];
 const SAY_WHAT = "Say what to make.";
-
-/** The words of a price, for the marker a button carries. */
-const priceLabelOf = (price: MakePrice) => price.about ?? priceWords(price.value);
 
 /**
  * Make's composer, as the graphite Make frames (deleted in redesign C3; Make is now docs/redesign/inventory.md § 5.12) 1, 3 and 7 draw it: the words with the type switch inside their box
@@ -45,6 +41,8 @@ export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
   /* Pressed while it waits: the reason shows (the words' own wait shows only then; any other at once). */
   const [said, setSaid] = useState(false);
   const goTitle = useMakePriceTitle(make.go.price);
+  /* The words of the price, as drawn, for the marker the Retry button carries. */
+  const goWords = useMakePriceWords(make.go.price);
   const waits = Boolean(make.go.blocked);
   const reason = make.go.blocked && (make.go.blocked !== SAY_WHAT || said) ? make.go.blocked : null;
   const press = () => {
@@ -138,7 +136,7 @@ export function Compose({ make, scope }: { make: MakeModel; scope: string }) {
           <p className="gx-mk-result-line">{make.result}</p>
           {/* Retry sends the same press again, at the figure on the button; whether anything was charged is not said here, only the ledger says that. */}
           {make.go.price && !make.go.blocked ? (
-            <button type="button" className="gx-primary gx-mk-retry" data-spend="priced" data-spend-price={priceLabelOf(make.go.price) ?? undefined} onClick={make.go.press} data-testid="make-retry">
+            <button type="button" className="gx-primary gx-mk-retry" data-spend="priced" data-spend-price={goWords ?? undefined} onClick={make.go.press} data-testid="make-retry">
               Retry · <MakePriceText price={make.go.price} />
             </button>
           ) : null}

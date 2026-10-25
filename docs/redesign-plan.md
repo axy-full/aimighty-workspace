@@ -1,4 +1,6 @@
-# Redesign plan: prototype 12
+# Redesign plan (the prototype-12 build, deleted 23 Oct 2026)
+
+> **23 Oct 2026: the prototype-12 build is deleted.** The owner (23 Oct, 14:35, item 5): "The prototype-12 build behind lib/newInterface.ts is deleted now, as its own PR right after #886. v31.16 is built behind that same switch, on the same routes, from scratch." `components/v12/` and `lib/v12/` are gone (three data files the draft's schema reads stay in `lib/v12/`), and with the switch on a workspace sees the live shell. The sections below describe that build and are kept as its history; "How the new screens plug in" no longer holds (no V12Shell frame, no Make page, no v12 screens). docs/old-shells.md › "The prototype-12 build deleted" lists what went and where its assertions are now. The owner decisions at the end stand.
 
 Written 10 Oct 2026 by the lead, at the owner's request ("write the plan into the repo as you go and build"). This file holds the decisions; the running status is in docs/redesign-progress.md. Research behind it:
 - docs/redesign/inventory.md: every prototype URL, screen, size, copy, price and bug.
@@ -42,7 +44,7 @@ Written 10 Oct 2026 by the lead, at the owner's request ("write the plan into th
 - **Data.** New screens reuse today's routes and hooks (app-map §1).
   - A screen needing a new API adds it behind the same auth and tenancy checks.
   - A screen needing a schema change waits for its own small migration PR, which is NEEDS AKSHAY; the screen work goes ahead stacked on it.
-- **Deleting the old design.** Each screen PR deletes the design/particl-graphite file(s) it replaces, per the table below. Code comments that cite a deleted file are re-pointed to the prototype-12 section that replaces it.
+- **Deleting the old design.** Each screen PR deletes the design/particl-graphite file(s) it replaces, per the table below. Code comments that cite a deleted file are re-pointed to the design section that replaces it (design/particl-v31.16 since 23 Oct 2026; the prototype-12 sections are gone).
   - Today's graphite components stay as long as customers use them, because the switch is off for them.
 
 ## Decisions taken by the lead (overridable)
@@ -167,3 +169,7 @@ The earlier "Owner decisions" sections (10 Oct to 21 Oct) are on `redesign/integ
    - Consent is a tick, not a gate. It records who ticked, when, and a file if one was attached. Nothing refuses to make, train, clone or lip-sync for want of it. Only a person ticks it.
    - Rule 3 covers design files.
    - No vendor rate, model id or model mapping goes into any commit.
+
+## Design notes
+
+- **The film record (step 3c, Amendment (iii) I) [schema]:** tables, checkpoint rule, turn context, acceptance tests and the migration plan are in [film-record-schema.md](film-record-schema.md). Docs only; nothing migrates before the owner's yes.

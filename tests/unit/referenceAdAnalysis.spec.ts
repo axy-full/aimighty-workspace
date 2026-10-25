@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { MEDIUM } from "../helpers/thinkingSlots";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { readFile, mkdir, writeFile, rm } from "node:fs/promises";
@@ -77,8 +78,11 @@ const model: CatalogModel = {
   inputModalities: ["text", "image"],
   contextWindow: 200000,
   maxTokens: 8192,
-  pricing: { input: 0.0000001, output: 0.0000003 },
+  pricing: { input: 0.000000113, output: 0.000000379 },
 };
+test("the fixture's made-up rates are no catalogue entry's", () => {
+  expect(vendorRatesIn(model.pricing)).toEqual([]);
+});
 const result = {
   summary: "A restrained product reveal in sampled frames.",
   beats: [
