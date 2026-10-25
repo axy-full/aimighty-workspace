@@ -17,8 +17,9 @@ import type { WorkspaceRole } from "../tenant";
 export type RowSource = "said" | "document" | "earlier_step" | "default" | "assumed";
 
 /**
- * How a row reads (R2): known = said, read from a document or carried from an earlier step ("from the brief · Change");
- * assumed = a house default or Atomik's pick ("I assumed … · Change"); open = nothing answers it yet.
+ * How a row reads (R2): known = said, read from a document or carried from an earlier step; assumed = a house default or Atomik's
+ * pick; open = nothing answers it yet. The line a closed row shows is MarkedRow's `line`: a carried row is known but still reads
+ * as a guess until a person confirms it (owner, 25 Oct 2026, answer 3).
  */
 export type RowState = "known" | "assumed" | "open";
 
@@ -134,6 +135,8 @@ export type RecordValue = {
   readonly source: RowSource;
   readonly carriedFrom?: string;
   readonly fromStep?: string;
+  /** On a `document` row: the page of the file that answered it (1 first), which the row's chip shows on hover. */
+  readonly page?: number;
 };
 
 /**
@@ -177,10 +180,13 @@ export type MarkedRow = {
   /** The step a carried value came from (answer 8); null otherwise. */
   readonly fromStep: string | null;
   /**
-   * How the row reads in place of a question (R2, G, H), from the copy table: "I assumed … · Change" for an assumed row, "from the
-   * brief · Change" for a known one (a carried one names its step); null for an open row.
+   * How the row reads in place of a question (R2, G, H; owner, 25 Oct 2026, answer 3), from the copy table: "I assumed … · Change"
+   * for a guess (a house default, Atomik's pick, or a value carried from an earlier step) until a person confirms it; "from you ·
+   * Change" for a person's own answer; "from the brief · Change" for a row a file answered. Null for an open row.
    */
   readonly line: string | null;
+  /** On a row a file answered, the page that answered it, for the chip's hover; absent otherwise. */
+  readonly page?: number;
 };
 
 /** A pill as a question shows it: its words and whether it is the lit default. */

@@ -184,9 +184,13 @@ export const QUESTIONS = {
   ceilingNone: "No limit",
   /** "No limit" as it reads inside "I assumed … · Change". */
   noLimit: "no limit",
-  /** A row read in place of its question (R2, H): "I assumed Hindi · Change", "from the brief · Change" (with the step's name). */
+  /**
+   * A row read in place of its question (R2, H; owner, 25 Oct 2026, answer 3): "I assumed Hindi · Change" until a person confirms
+   * it, "from you · Change" once they have, "from the brief · Change" for a row a file answered.
+   */
   assumed: "I assumed",
   fromThe: "from the",
+  fromYou: "from you",
 } as const;
 
 /** Money words (rule 14; Amendment (ii) A3: "free" is lowercase). */
