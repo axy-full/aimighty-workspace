@@ -1,12 +1,12 @@
 import { test, expect } from "@playwright/test";
 import { compositeMask, engineMask, eraserMask, fillMask, removalMask, wordsMask, type EngineMask, type SelectionMask } from "../../lib/maskPolarity";
 
-/* A 4×4 selection: the middle 2×2 selected, one feathered pixel at (3, 1), the rest unselected. */
-const SELECTED = [5, 6, 9, 10], FEATHERED = 7;
+/* A 4×4 selection: the middle 2×2 selected, two feathered pixels at (3, 1) and (1, 3), the rest unselected. */
+const SELECTED = [5, 6, 9, 10], FEATHERED: Record<number, number> = { 7: 0.5, 13: 0.25 };
 const selection = (): SelectionMask => {
   const coverage = new Float32Array(16);
   for (const i of SELECTED) coverage[i] = 1;
-  coverage[FEATHERED] = 0.5;
+  for (const [i, c] of Object.entries(FEATHERED)) coverage[Number(i)] = c;
   return { width: 4, height: 4, coverage };
 };
 
@@ -31,7 +31,8 @@ const expectOnlyTheSelection = (m: EngineMask, rule: keyof typeof EDITS) => {
   const delta = changed(m, rule);
   for (let i = 0; i < 16; i++) {
     if (SELECTED.includes(i)) expect(delta[i], `pixel ${i} is selected`).toBe(240);
-    else if (i === FEATHERED) expect(delta[i], "the feathered pixel blends").toBe(Math.round(240 * (rule === "white" ? 128 : 255 - 128) / 255));
+    /* A feathered pixel is edited by its coverage, within a byte's rounding, so a ramp running the wrong way fails at 0.25. */
+    else if (i in FEATHERED) expect(Math.abs(delta[i] - 240 * FEATHERED[i]), `pixel ${i} blends by its coverage`).toBeLessThanOrEqual(1);
     else expect(delta[i], `pixel ${i} is outside the selection`).toBe(0);
   }
 };
