@@ -68,7 +68,7 @@ test("the Ad film's Brief floor: H's seven rows in H's order, at most four pills
   /* Rule 11: Atomik never picks a spend limit, nor says that consent is on file. */
   const row = (key: string) => AD_FILM_BRIEF.floor.find((r) => r.key === key)!;
   /* The spend limit (film-record-schema A.0, A.2, question 7): person-only, a reference ("none"), no free-text figure. */
-  expect(row("ceiling")).toMatchObject({ personOnly: true, field: false, pills: { pills: [{ id: "none", copy: "ceilingNone" }], lit: "none" } });
+  expect(row("ceiling")).toMatchObject({ personOnly: true, field: false, pills: { pills: [{ id: "none", copy: "ceilingNone" }, { id: "production", copy: "ceilingOther" }], lit: "none" } });
   expect(row("ceiling").answeredBy).not.toContain("house_default");
   expect(AD_FILM_BRIEF.floor.filter((r) => r.personOnly).map((r) => r.key)).toEqual(["ceiling"]);
   expect(row("real").agentPicks).not.toContain("yes_consent");
@@ -301,7 +301,7 @@ test("Decide for me (answers 3 and 6): every open row at this step closed, floor
   expect(nothing.decideForMe({ kind: "ad_film", length: "60s", plays: "phone", ...picks }).rows.filter((r) => ["length", "plays"].includes(r.key)).map((r) => r.value)).toEqual(["60s", "phone"]);
 
   /* Rows a person alone answers (rule 11): Atomik never sets a spend limit, nor says consent is on file. */
-  for (const ceiling of ["none", "cap_500", "800"]) expect(() => nothing.decideForMe({ kind: "ad_film", ceiling, ...picks })).toThrow("Only a person can choose that answer.");
+  for (const ceiling of ["none", "production", "cap_500", "800"]) expect(() => nothing.decideForMe({ kind: "ad_film", ceiling, ...picks })).toThrow("Only a person can choose that answer.");
   expect(() => nothing.decideForMe({ kind: "ad_film", real: "yes_consent", ...picks })).toThrow(QuestionEngineError);
   /* …but a person can, and Atomik's lit pick on the card is never a person-only one. */
   expect(engineFor(fixture("menu-only")).answer("ceiling", "none").rows.find((r) => r.key === "ceiling")).toMatchObject({ state: "known", value: "none" });
@@ -309,7 +309,7 @@ test("Decide for me (answers 3 and 6): every open row at this step closed, floor
   for (const figure of ["cap_200", "cap_500", "500"]) expect(() => engineFor(fixture("menu-only")).answer("ceiling", figure)).toThrow(QuestionEngineError);
   const ceilingCard = engineFor(fixture("synthetic-d11-deck")).answer("real", "no_one").next({ ceiling: "none" });
   expect(ceilingCard).toMatchObject({ key: "ceiling", field: false, fieldLabel: null });
-  expect(ceilingCard?.pills).toEqual([{ id: "none", label: QUESTIONS.ceilingNone, lit: true }]);
+  expect(ceilingCard?.pills).toEqual([{ id: "none", label: QUESTIONS.ceilingNone, lit: true }, { id: "production", label: QUESTIONS.ceilingOther, lit: false }]);
 
   /* A row with no default needs a pick: kind has no ★, an above-floor row never has one. */
   expect(() => nothing.decideForMe(picks)).toThrow(/kind/);
@@ -465,16 +465,17 @@ test("answer 4: the Brief's \"real\" pre-fills Elements' consent; the engine nev
 
 test("answer 5: the spend limit's platform default is No limit, a house default is proposed and never written, a workspace default never applies", () => {
   const ceiling = AD_FILM_BRIEF.floor.find((r) => r.key === "ceiling")!;
-  /* Never a platform default other than No limit: the lit pill, the only pill, and what "Decide for me" shows are all "none". */
+  /* Never a platform default other than No limit: the lit pill and what "Decide for me" shows are "none"; the only other pill is
+     Other, a reference to the production's own cap that holds no figure (answer 4). */
   expect("by" in ceiling.pills).toBe(false);
-  expect(ceiling.pills).toEqual({ pills: [{ id: "none", copy: "ceilingNone", inLine: "noLimit" }], lit: "none" });
+  expect(ceiling.pills).toEqual({ pills: [{ id: "none", copy: "ceilingNone", inLine: "noLimit" }, { id: "production", copy: "ceilingOther" }], lit: "none" });
   expect(ceiling.decidedShows).toBe("none");
   expect(ceiling.proposedBy).toEqual(["house_default"]);
   expect(ceiling.answeredBy).not.toContain("house_default");
   /* A house default (three answers the same way) is proposed: lit on the card for the person to tap. It answers nothing. */
   const house = questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", { ...fixture("synthetic-d11-deck").read, real: { value: "no_one", source: "said" }, ceiling: { value: "none", source: "default" } }));
   expect(house.rows.find((r) => r.key === "ceiling")).toMatchObject({ state: "open", line: null });
-  expect(house.next()).toMatchObject({ key: "ceiling", pills: [{ id: "none", lit: true }] });
+  expect(house.next()).toMatchObject({ key: "ceiling", pills: [{ id: "none", lit: true }, { id: "production", lit: false }] });
   expect(house.writes).toEqual([]);
   /* "Decide for me" over it writes no limit either. */
   expect(house.decideForMe({ "q:tone": "t" }).writes.some((w) => w.key === "ceiling")).toBe(false);
@@ -625,4 +626,24 @@ test("answer 3 (b): any member sets the spend limit; lifting a cap already set i
   /* Another production's caps in the same workspace are refused too: "no cap here" is this production's, never another's. */
   expect(() => questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", read), undefined, { workspaceId: WS_A, productionId: "p_other", production: false, workspace: false })).toThrow("That row is not in this workspace.");
   expect(() => questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", read), undefined, { workspaceId: WS_A, production: false, workspace: false } as unknown as { workspaceId: string; productionId: string; production: boolean; workspace: boolean })).toThrow(QuestionEngineError);
+});
+
+test("answer 4: Other records a reference to the production's own cap, never a figure; only a person picks it", () => {
+  const read = { ...fixture("synthetic-d11-deck").read, real: { value: "no_one", source: "said" as const } };
+  const at = (caps?: { production: boolean; workspace: boolean }) =>
+    questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", read), undefined, caps ? { workspaceId: WS_A, productionId: "p", ...caps } : undefined);
+
+  /* A person's Other is written as "production" ({"cap":"production"}), whoever they are: its figure was judged and set as the
+     production's cap before the row is answered (lib/caps.ts setCapFromBrief), so the engine never sees one. */
+  for (const caps of [undefined, { production: false, workspace: false }, { production: true, workspace: true }]) {
+    for (const role of ["member", "admin", "owner"] as const) {
+      const engine = at(caps).answer("ceiling", "production", {}, { role });
+      expect(engine.rows.find((r) => r.key === "ceiling"), JSON.stringify({ caps, role })).toMatchObject({ state: "known", value: "production", source: "said" });
+      expect(engine.writes.filter((w) => w.key === "ceiling").map((w) => w.value)).toEqual(["production"]);
+    }
+  }
+  /* Never Atomik's, never words read for another row, never a figure in its place. */
+  expect(() => at().decideForMe({ ceiling: "production", "q:tone": "t" })).toThrow("Only a person can choose that answer.");
+  expect(() => at().answer("q:tone", "calm", { ceiling: "production" })).toThrow(QuestionEngineError);
+  for (const figure of ["production:500", "500", "cap_500", " production"]) expect(() => at().answer("ceiling", figure)).toThrow(QuestionEngineError);
 });

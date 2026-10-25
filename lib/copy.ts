@@ -182,6 +182,8 @@ export const QUESTIONS = {
   materialMedia: "Photos or clips",
   ceiling: "A spend limit for this film?",
   ceilingNone: "No limit",
+  /** The pill whose field takes a figure; the figure becomes the production's cap, never the record's. */
+  ceilingOther: "Other",
   /** "No limit" as it reads inside "I assumed … · Change". */
   noLimit: "no limit",
   /** A row read in place of its question (R2, H): "I assumed Hindi · Change", "from the brief · Change" (with the step's name). */
