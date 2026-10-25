@@ -113,13 +113,13 @@ All under `ENGINE_MOCK=1`, on file databases, with the worker mocked and synthet
 
 All seven as recommended.
 
-1. **Box unit: fractions of the page,** 0 to 1, origin top-left. A highlight is drawn without knowing the page size; the page sizes stay in the stored result.
+1. **Box unit: fractions of the page,** 0 to 1, origin top-left. A highlight is drawn without knowing the page size, and scans and PDFs read alike; the page sizes stay in the stored result.
 2. **Text per block: at most 4,000 characters.** A longer block is split into consecutive blocks with the same page, box and kind, each with its own `seq` and `part` counting up from 0. Split, never cut.
 3. **Files with no pages** (.txt, .md, .fountain): each block gets page 1 and the whole page as its box, and the reading's `geometry` is `none`. Every block still has a page and a box, with no NULLs.
-4. **A re-read is a new version.** The older reading keeps its blocks, so a quote that cites them still opens. Two partial unique indexes hold it: at most one current reading per upload (`drd_current`) and at most one in flight (`drd_inflight`). In one transaction the older reading is marked superseded first and the newer one `done` second (SQLite checks a unique index row by row). A re-read that fails changes nothing.
-5. **The same bytes uploaded twice reuse the reading,** only from an upload the asking person may open, never across workspaces and never from a superseded reading. The reuse names its source in `reused_from`, copies the blocks in one `INSERT … SELECT` and writes its own stored result. **A reuse is free:** Step 3 prices a reading that calls the worker, and `reused_from` is how it tells the two apart.
+4. **A re-read is a new version.** The older reading keeps its blocks, so a quote that cites them still opens. Two partial unique indexes hold it: at most one current reading per upload (`drd_current`) and at most one in flight (`drd_inflight`). In one transaction the older reading is marked superseded first and the newer one `done` second: SQLite checks a unique index row by row, so the other order fails on `drd_current`. A re-read that fails changes nothing.
+5. **The same bytes uploaded twice reuse the reading,** only from an upload the asking person may open, never across workspaces and never from a superseded reading. The reuse names its source in `reused_from`, copies the blocks in one `INSERT … SELECT` and writes its own stored result under its own `readings/<id>.json`, never a pointer to the first reading's file, so deleting the first upload leaves it whole. An instant answer from an upload the asker may not open would tell them someone here already uploaded those bytes, so such a file is read afresh. **A reuse is free:** Step 3 prices a reading that calls the worker, and `reused_from` is how it tells the two apart.
 6. **Export: out of the workspace export for R1** (`lib/workspaceExport.ts:12`); added with the record's search work, grouped by upload.
-7. **The upload gates the reading.** Whoever may open the upload may read its reading, and nobody else. `project_id` only records where it was asked. Readings go when their upload goes, never with a project.
+7. **The upload gates the reading.** The text is the upload's own words: whoever may open the upload may read its reading, and nobody else. Gating by project would refuse a teammate who may open a shared upload a reading asked from someone's private board. `project_id` only records where it was asked. Readings go when their upload goes, never with a project.
 
 ---
 
