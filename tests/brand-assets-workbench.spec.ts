@@ -2,13 +2,13 @@ import { test, expect, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { isCompact } from "./helpers/shellMode";
-import { openAsTabs, redesignWithBoards } from "./helpers/v12Header";
 import { signInLocally } from "./helpers/workbenchLocal";
 
 /**
  * GUARD, in a browser (owner, 15 Oct 2026: "Every v25 screen uses the real assets already in public/brand ... a guard test that fails if the header or favicon uses
- * anything else"; the source-level half is tests/unit/brandAssets-guard.spec.ts). The logo that RENDERS in the new header is a picture of a file in
+ * anything else"; the source-level half is tests/unit/brandAssets-guard.spec.ts). The logo that RENDERS in the app's header is a picture of a file in
  * public/brand, and it loaded; every icon the page links (and the manifest's) is one of the real icon files, byte for byte as served.
+ * The header is the live one (components/graphite/Header.tsx) since the prototype-12 header was deleted (23 Oct 2026).
  */
 const ICONS = ["/favicon.svg", "/favicon.ico", "/icon.png", "/apple-touch-icon.png", "/icon-192.png", "/icon-512.png"];
 const sha = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
@@ -37,11 +37,15 @@ async function iconsOf(page: Page) {
 
 test.beforeEach(({}, info) => { test.skip(isCompact(info), "the header is desktop; the icons are the same on a phone (checked at the desktop sizes)"); });
 
-test("the new interface's header draws the brand's mark and wordmark (no studio line, no lockup), and its accessible name is particl, Home", async ({ page }) => {
-  const { ids } = await redesignWithBoards(page, ["Brand check"]);
-  await openAsTabs(page, ids);
-  const logo = page.getByTestId("v12-logo");
-  await expect(logo).toHaveAccessibleName("particl, Home");
+test("the app's header draws the brand's mark and wordmark (no studio line, no lockup), and its accessible name is particl home", async ({ page }) => {
+  /* The live header (components/graphite/Header.tsx), which every workspace sees, the new-interface switch on or off (the prototype-12 header this
+     test first read went with that build, 23 Oct 2026; owner, 23 Oct 2026, 19:35: retarget it). */
+  await signInLocally(page.request, "Brand Tester");
+  await page.goto("/suites?view=home");
+  const header = page.locator("header.gx-header");
+  await expect(header).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByTestId("brand-home")).toHaveAccessibleName("particl home");
+  const logo = header.locator(".brand-logo");
   const mark = await logoIsBrand(page, logo.locator(".brand-logo-mark img"), "the header's mark");
   const word = await logoIsBrand(page, logo.locator(".brand-logo-word img"), "the header's wordmark");
   expect(mark).toBe("/brand/particl-mark-on-dark.svg");
@@ -49,8 +53,10 @@ test("the new interface's header draws the brand's mark and wordmark (no studio 
   /* The wordmark file has a "studio" line under the word: the box clips it away. */
   const clipped = await logo.locator(".brand-logo-word").evaluate((box) => { const img = box.querySelector("img")!.getBoundingClientRect(), b = box.getBoundingClientRect(); return { boxH: b.height, imgH: img.height }; });
   expect(clipped.boxH, "the studio line is clipped").toBeLessThan(clipped.imgH * 0.7);
-  await expect(page.getByTestId("v12-header").locator(".v12-logo-ring, .v12-logo-dot, .v12-logo-name, img[src*='lockup']")).toHaveCount(0);
-  await expect(page.getByTestId("v12-header").locator("button.v12-logo svg")).toHaveCount(0);
+  /* No second logo: no drawn ring or dot, no typed name, no lockup in the header, and the brand button draws no logo of its own. */
+  await expect(header.locator(".v12-logo-ring, .v12-logo-dot, .v12-logo-name, .gx-brand-name, img[src*='lockup']")).toHaveCount(0);
+  await expect(header.locator("button.gx-brand svg")).toHaveCount(0);
+  await expect(header.locator(".brand-logo")).toHaveCount(1);
 });
 
 test("the page's favicon, apple-touch icon and manifest icons are the real files, byte for byte (new interface and today's)", async ({ page }) => {

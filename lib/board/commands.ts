@@ -16,8 +16,8 @@ export type BoardCommand =
   | { name: "glide"; to: RegionId };
 
 /**
- * The commands the new interface's right-click menus send (redesign A3, components/v12/menus/MenuHost.tsx); nothing
- * else sends them, so today's board behaves as before for every workspace without the new interface. Each runs the
+ * The commands the prototype-12 build's right-click menus sent (redesign A3; that build is deleted, 23 Oct 2026, and
+ * nothing sends them today; the board still answers them for the next build). Each runs the
  * code its key or click runs: select a card as a click does, take the selected cards off as ⌫ does, pick a tool as its
  * key does, and select every card.
  */

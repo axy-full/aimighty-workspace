@@ -253,8 +253,8 @@ export const MODELS: ModelDef[] = [
     note: "Cheaper per token. 4K tier is listed but untested — verify before relying on it.",
   },
   /* ── Kling 3.0, on fal.ai ─────────────────────────────────────────────
-   * Kuaishou's engine, billed per second of output: $0.084 without audio and
-   * $0.126 with on Standard, $0.112 / $0.168 on Pro (fal, read 6 Sep 2026).
+   * Kuaishou's engine, billed per second of output; audio costs more than
+   * none, and Pro more than Standard (its rates live in the price tables).
    * Text-to-video as it stands; a first-frame image makes it image-to-video
    * and a second image sets the last frame. Motion control is its locked
    * task: a still of a character plus a clip whose movement it borrows.

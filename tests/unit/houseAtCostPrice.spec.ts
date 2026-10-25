@@ -7,11 +7,6 @@ import { getModel } from "../../lib/models";
 import { estimateImageCostUsd } from "../../lib/vendorPricing";
 import { billCredits, creditUsd } from "../../lib/creditTerms";
 import { NO_REFERENCES, quoteWorkbenchMedia, quoteWorkbenchMediaAtCost, workbenchRate } from "../../lib/workbench/media-quote";
-import { makeQuote } from "../../lib/v12/make";
-import { NO_AT_COST_PRICE, PAYS_AT_COST, priceDisplay } from "../../lib/v12/quote";
-import { exact } from "../../lib/shell/price-words";
-import { fmtLedgerUsd } from "../../lib/usageLedgerTerms";
-import { fmtRenderPrice, moneyLine, renderState, type RenderTake } from "../../lib/v12/renderState";
 
 /**
  * The house workspace sees every price at cost (lib/houseWorkspace.ts); a customer sees credits. One take, one number: the
@@ -22,8 +17,6 @@ import { fmtRenderPrice, moneyLine, renderState, type RenderTake } from "../../l
 const NB2 = "gemini-3.1-flash-image";
 const model = getModel(NB2);
 const params = { resolution: "512", ratio: "1:1", duration: 0 };
-const ENV = (dollars: boolean) => ({ creditUsd: creditUsd(), dollars: fmtLedgerUsd, _dollars: dollars });
-const at = (take: Partial<RenderTake>): RenderTake => ({ id: "g", status: "running", kind: "image", model: NB2, provider: "google", createdAt: 0, ...take } as RenderTake);
 
 test("the quote: customers get credits only, the house also gets the engine's dollars, the same figure admission reserves", () => {
   const customer = quoteWorkbenchMedia(model, { ...params, ratio: model.ratios[0], resolution: model.resolutions[0] }, NO_REFERENCES);
@@ -41,39 +34,7 @@ test("the quote: customers get credits only, the house also gets the engine's do
   expect(workbenchRate(model, { atCost: true }, NO_REFERENCES)?.usd).toBeGreaterThan(0);
 });
 
-test("house: the button, the hold on the card and the settled charge are one figure, at cost", () => {
-  const usd = estimateImageCostUsd(NB2, model.resolutions[0], 0)!.net;
-  const quote = quoteWorkbenchMediaAtCost(model, { resolution: model.resolutions[0], ratio: model.ratios[0], duration: 0 }, NO_REFERENCES);
-  /* The button's price: the quote's credits would read the customer's price in dollars; the quote's dollars read the engine's. */
-  const button = priceDisplay(makeQuote(exact(quote.credits!), { dollars: true, creditUsd: creditUsd() }, quote.usd), undefined, ENV(true))!.text;
-  /* Without the engine's dollars the house is shown no figure, never the customer price (credits at the margin, as dollars). */
-  const without = priceDisplay(makeQuote(exact(quote.credits!), { dollars: true, creditUsd: creditUsd() }), undefined, ENV(true))!.text;
-  expect(without).toBe("—");
-  expect(without).not.toBe(fmtLedgerUsd(quote.credits! * creditUsd()));
-  /* The hold: what admission reserved (the meter's engine cost), as the card words it. */
-  const held = renderState(at({ price: { amount: usd, unit: "usd" } }), 70_000).money!.text;
-  /* The settled charge: the take's cost in dollars, as the tray words it. */
-  const settled = fmtRenderPrice({ amount: usd, unit: "usd" });
-  expect(button).toBe(settled);
-  expect(held).toBe(`${settled} held · charged only when it’s ready`);
-  expect(renderState(at({ status: "running", price: { amount: usd, unit: "usd" } }), 70_000).tile).toBe(`Rendering · 1:10 so far · ${settled} held`);
-  /* A batch of takes is the take's dollars times the count. */
-  expect(priceDisplay(makeQuote(exact(quote.credits! * 3), { dollars: true, creditUsd: creditUsd() }, quote.usd! * 3), undefined, ENV(true))!.text).toBe(fmtLedgerUsd(usd * 3));
-});
 
-test("customer: the button, the hold and the settled charge are one figure, in credits", () => {
-  const usd = estimateImageCostUsd(NB2, model.resolutions[0], 0)!.net;
-  const credits = quoteWorkbenchMedia(model, { resolution: model.resolutions[0], ratio: model.ratios[0], duration: 0 }, NO_REFERENCES).credits!;
-  const button = priceDisplay(makeQuote(exact(credits), { dollars: false, creditUsd: creditUsd() }), undefined, ENV(false))!.text;
-  const held = renderState(at({ price: { amount: credits, unit: "cr" } }), 70_000).money!.text;
-  expect(button).toBe(`${credits} cr`);
-  expect(held).toBe(`${credits} cr held · charged only when it’s ready`);
-  expect(fmtRenderPrice({ amount: credits, unit: "cr" })).toBe(button);
-  /* The dollars sent for a customer's quote can never alter what they are shown. */
-  expect(priceDisplay(makeQuote(exact(credits), { dollars: false, creditUsd: creditUsd() }, usd), undefined, ENV(false))!.text).toBe(button);
-  /* Cancel sent: the figure stands alone, with no promise beside it (see RenderMoney). */
-  expect(renderState(at({ price: { amount: credits, unit: "cr" } }), 70_000).money!.short).toBe(`${credits} cr held`);
-});
 
 /* The route itself: the engines route sends the house the engine's dollars and a customer never. */
 async function enginesRoute() {
@@ -114,62 +75,33 @@ test("the engines route: the house gets the engine's dollars (one take, and on t
   expect(JSON.stringify(customerRows)).not.toMatch(/"usd"/);
 });
 
-test("a take in flight says on its Make tile, under its held figure, that it is charged only when it's ready (or what the engine reports); a cancel on its way drops the promise", async () => {
-  const { tileTail } = await import("../../lib/v12/make");
-  const running = renderState(at({ price: { amount: 0.045, unit: "usd" } }), 70_000);
-  expect(running.tile).toBe("Rendering · 1:10 so far · $0.05 held");
-  expect(tileTail(running)).toBe("Charged only when it’s ready");
-  expect(tileTail(renderState(at({ price: { amount: 1, unit: "cr" } }), 70_000))).toBe("Charged only when it’s ready");
-  /* Slow, preparing, failed and waiting takes carry their own words, not this. */
-  expect(tileTail(renderState(at({ price: { amount: 1, unit: "cr" } }), 40 * 60_000))).toBeNull();
-  expect(tileTail(renderState(at({ status: "queued", price: { amount: 1, unit: "cr" } }), 70_000))).toBeNull();
-  expect(tileTail(renderState(at({ status: "failed" }), 70_000))).toBeNull();
-  /* Cinema Studio holds a band over its quote: its own words. */
-  expect(tileTail(renderState(at({ model: "higgsfield-cinema-studio-4.0", provider: "higgsfield", price: { amount: 129, unit: "cr" } }), 70_000))).toBe("Charged what the engine reports");
-});
 
-test("the house is never shown the customer price in dollars: with no engine dollars it shows no figure, with them it says it pays at cost", () => {
-  const env = { creditUsd: creditUsd(), dollars: fmtLedgerUsd };
-  /* No dollars in the answer (an enhancement added, a price that moved): "—" with its reason, never credits turned into dollars. */
-  const none = priceDisplay(makeQuote(exact(1), { dollars: true, creditUsd: creditUsd() }), undefined, env)!;
-  expect(none).toMatchObject({ text: "—", title: NO_AT_COST_PRICE, state: "error" });
-  expect(none.text).not.toMatch(/\d/);
-  /* An estimate (sound) keeps its "up to", in dollars. */
-  expect(priceDisplay(makeQuote({ kind: "up-to", credits: 2 } as never, { dollars: true, creditUsd: creditUsd() }, 0.1234), undefined, env)!.text).toBe("up to $0.13");
-  /* The hover says so. */
-  const dollars = priceDisplay(makeQuote(exact(1), { dollars: true, creditUsd: creditUsd() }, 0.045), undefined, env)!;
-  expect([dollars.text, dollars.title]).toEqual(["$0.05", PAYS_AT_COST]);
-  expect(PAYS_AT_COST).toBe("Pays at cost");
-});
 
-test("Cinema Studio for the house: about and at most, in the engine's dollars; the customer's words stay credits", async () => {
-  const { houseAbout } = await import("../../lib/v12/make");
-  expect(houseAbout(0.42)).toBe("about $0.42, at most $1.26");
-});
 
-test("a cancel on its way: the money line keeps its figure and says it settles when the engine confirms; otherwise it keeps both", () => {
-  const state = renderState(at({ price: { amount: 0.045, unit: "usd" } }), 70_000);
-  expect(moneyLine(state.money!)).toEqual({ head: "$0.05 held", tail: " · charged only when it’s ready" });
-  expect(moneyLine(state.money!, true)).toEqual({ head: "$0.05 held", tail: " · settles when the engine confirms" });
-  expect(moneyLine(state.money!, true).head + moneyLine(state.money!, true).tail).not.toMatch(/charged only when/);
-});
 
-test("Atomik's thinking (Home Start, the new-board bar, the board bar): the house reads the planner's dollars or no figure; a customer reads credits", async () => {
-  const { planningQuote } = await import("../../lib/v12/quote");
+test("Atomik's thinking: the planner's dollars reach the house's price read beside its credits; a credit workspace reads credits only", async () => {
   const { thinkingFrom } = await import("../../lib/shell/thinking-price");
-  const env = { creditUsd: creditUsd(), dollars: fmtLedgerUsd };
   const body = { agent: { enabled: true, ask: { planning: 4, planningUsd: 0.373 } } };
   expect(thinkingFrom(body)).toEqual({ state: "ready", credits: 4, usd: 0.373 });
   /* A credit workspace is never sent the dollars, and never reads them. */
   expect(thinkingFrom({ agent: { enabled: true, ask: { planning: 4 } } })).toEqual({ state: "ready", credits: 4 });
-  const credits = priceDisplay(planningQuote({ kind: "up-to", credits: 4 }, 0.373, false), undefined, env)!;
-  expect(credits.text).toBe("up to 4 cr");
-  const house = priceDisplay(planningQuote({ kind: "up-to", credits: 4 }, 0.373, true), undefined, env)!;
-  expect([house.text, house.title]).toEqual(["up to $0.38", PAYS_AT_COST]);
-  expect(priceDisplay(planningQuote({ kind: "up-to", credits: 4 }, null, true), undefined, env)).toMatchObject({ text: "—", title: NO_AT_COST_PRICE });
   /* The press still approves the credits: the dollars change what is shown, not the limit. */
   expect(thinkingFrom(body)).toMatchObject({ credits: 4 });
 });
+
+/*
+ * Moved here when the prototype-12 build was deleted (23 Oct 2026; docs/old-shells.md). These asserted that build's own price layer
+ * (lib/v12/make.ts makeQuote, lib/v12/quote.ts priceDisplay and planningQuote, lib/v12/renderState.ts), which went with it. Where the
+ * live shell has the rule, the test named here covers it; the rest has no home until v31.16 draws these surfaces, and stays as fixme.
+ */
+const NO_HOME = "no home: the prototype-12 price layer that drew it is deleted (23 Oct 2026); owner question: does v31.16 carry it, or is it dropped?";
+test.fixme(`house: the button, the hold on the card and the settled charge are one figure, at cost — ${NO_HOME} (the house's "no figure without the engine's dollars" is live: tests/unit/houseDollars.spec.ts)`, () => {});
+test.fixme(`customer: the button, the hold and the settled charge are one figure, in credits; dollars sent beside a customer's quote never change what they see — ${NO_HOME}`, () => {});
+test.fixme(`a take in flight says "Charged only when it's ready" (Cinema Studio: "Charged what the engine reports") under its held figure — ${NO_HOME}`, () => {});
+test.fixme(`the house is never shown the customer price in dollars: "—" with its reason, "up to $…" for an estimate, "Pays at cost" on hover — ${NO_HOME} (live in lib/shell/price-words.ts: tests/unit/houseDollars.spec.ts)`, () => {});
+test.fixme(`Cinema Studio for the house: "about $0.42, at most $1.26" in the engine's dollars — ${NO_HOME}`, () => {});
+test.fixme(`a cancel on its way keeps the held figure and says it settles when the engine confirms, never "charged only when ready"; with no figure it says only that — ${NO_HOME}`, () => {});
+test.fixme(`Atomik's thinking for the house reads "up to $…" with "Pays at cost", or "—" with its reason when the planner's dollars are missing — ${NO_HOME}`, () => {});
 
 test("the planner's ceiling reaches the house in dollars beside its credits, and a customer workspace never receives the dollars", async () => {
   /* The planner is priced the way a plan reserves it: the mock planner's price under ENGINE_MOCK=1. Without it (CI's unit job sets none) the price comes from
@@ -197,7 +129,3 @@ test("the planner's ceiling reaches the house in dollars beside its credits, and
   }
 });
 
-test("a cancel on its way with no figure on the take reads only what is true", () => {
-  const unpriced = renderState(at({}), 70_000).money!;
-  expect(moneyLine(unpriced, true)).toEqual({ head: "Settles when the engine confirms", tail: "" });
-});

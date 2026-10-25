@@ -10,11 +10,11 @@ const token = "r".repeat(40);
 const clip = readFileSync(path.resolve("tests/fixtures/astra-source.mp4"));
 const review = {
   workspace: { name: "Studio", logo: null },
-  production: { name: "Coast Road", description: "Final selects" },
+  production: { name: "Coast Road" },
   takes: [
-    { id: "gen_video", kind: "video", shot: "SH010", title: "The jetty", version: 2, prompt: "A boat at dawn.", approvedBy: null, media: `/api/review/${token}/media/gen_video`, notes: [] },
-    { id: "gen_audio", kind: "audio", shot: "SH020", title: "Voice over", version: 1, prompt: "A calm read.", approvedBy: null, media: `/api/review/${token}/media/gen_audio`, notes: [] },
-    { id: "gen_model", kind: "model", shot: "SH030", title: "The parcel", version: 1, prompt: "A parcel.", approvedBy: null, media: `/api/review/${token}/media/gen_model`, notes: [] },
+    { id: "gen_video", kind: "video", shot: "SH010", title: "The jetty", version: 2, media: `/api/review/${token}/media/gen_video`, notes: [] },
+    { id: "gen_audio", kind: "audio", shot: "SH020", title: "Voice over", version: 1, media: `/api/review/${token}/media/gen_audio`, notes: [] },
+    { id: "gen_model", kind: "model", shot: "SH030", title: "The parcel", version: 1, media: `/api/review/${token}/media/gen_model`, notes: [] },
   ],
   expiresAt: Date.UTC(2026, 11, 1),
 };

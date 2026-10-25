@@ -5,6 +5,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import ts from "typescript";
 import type { AdmissionActor } from "../../lib/admissionTypes";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 import {
   ENHANCE_ABANDONED, ENHANCE_KEY_ABANDON_MS, ENHANCE_LOST, ENHANCE_PENDING, EnhanceKeys, EnhanceRuns, enhanceSignature, pressEnhance,
 } from "../../lib/shell/enhance-press";
@@ -24,7 +25,10 @@ delete process.env.PLATFORM_ALLOWANCE_USD;
 
 const OWNER: AdmissionActor = { user: { id: "owner", email: "owner@example.invalid", name: "owner", role: "admin", owner: true, disabled: false, createdAt: 0, lastSeen: null } };
 const WRITER = "anthropic/claude-haiku-4.5";
-const MODEL = { id: WRITER, name: "Writer", owner: "anthropic", type: "language", description: "", contextWindow: 100000, maxTokens: 5000, pricing: { input: "0.000001", output: "0.000002" } };
+const MODEL = { id: WRITER, name: "Writer", owner: "anthropic", type: "language", description: "", contextWindow: 100000, maxTokens: 5000, pricing: { input: "0.00000113", output: "0.00000219" } }; // made-up rates
+test("the writer's made-up rates are no catalogue entry's", () => {
+  expect(vendorRatesIn(MODEL.pricing)).toEqual([]);
+});
 
 const nodeRequire = createRequire(path.resolve("package.json"));
 function resolveSource(from: string, name: string): string {

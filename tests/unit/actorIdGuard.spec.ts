@@ -144,7 +144,7 @@ const readJobs = async (ws: WS, viewer: Acct, project: string) => {
   }, { user: { ...current, role: "member", owner: false, disabled: false, lastSeen: null, createdAt: 0 } });
 };
 
-test("a client workspace: an old row's member id reads as the member's name in the jobs API, on a client review link and in the lock prompt; the owner's id reads Particl support; an unknown id reads as nothing, never the id", async () => {
+test("a client workspace: an old row's member id reads as the member's name in the jobs API and in the lock prompt, and a client review link names no one; the owner's id reads Particl support; an unknown id reads as nothing, never the id", async () => {
   const { client, root, member } = await fixture();
   const { project, shot } = await oldRows(client, "c", { member: member.id, root: root.id });
   const g = await readJobs(client, member, project);
@@ -155,12 +155,13 @@ test("a client workspace: an old row's member id reads as the member's name in t
     expect(g.g_c_name[col], `name ${col}`).toBe("Plain Name");
   }
   expect(JSON.stringify(g)).not.toMatch(/usr_/);
-  /* A legacy client review link: an outside guest reads the approved takes. */
+  /* A legacy client review link: an outside guest reads the approved takes, and no one's name or id (SOW-report #59). */
   const { mintShare } = await import("../../lib/shares");
   const { token } = await inTenant(client, () => mintShare({ workspaceId: client.id, projectId: project, by: MEMBER.name, actorId: member.id }));
   const review = await import("../../app/api/review/[token]/route");
-  const page = (await (await review.GET(new Request(`http://x/api/review/${token}`), { params: Promise.resolve({ token }) })).json()) as { takes: { id: string; approvedBy: string | null }[] };
-  expect(page.takes.map((t) => t.approvedBy)).toEqual([MEMBER.name, SUPPORT, null, "Plain Name"]);
+  const page = (await (await review.GET(new Request(`http://x/api/review/${token}`), { params: Promise.resolve({ token }) })).json()) as { takes: Record<string, unknown>[] };
+  expect(page.takes.map((t) => "approvedBy" in t)).toEqual([false, false, false, false]);
+  for (const name of [MEMBER.name, SUPPORT, "Plain Name"]) expect(JSON.stringify(page)).not.toContain(name);
   expect(JSON.stringify(page)).not.toMatch(/usr_/);
   /* The lock prompt: the newest approved take of the shot names who approved it. Each take in turn is the newest. */
   const { approvedTakeOf } = await import("../../lib/shots");

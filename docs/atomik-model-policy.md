@@ -95,6 +95,8 @@ If the setting's model is set but not being served, and the checked-in catalogue
 
 The owner sets it by env: `TREATMENT_WRITER_MODEL` (an OpenAI id, `openai/<id>` or a bare `gpt-…`) and `TREATMENT_WRITER_EFFORT` (default `high`). It is read when it is needed.
 
+The catalogue serves it, at the catalogue's price, once `lib/modelCatalog.json` holds the id: a verified OpenAI text id, or one added with `node scripts/ops/snapshot-catalog.mjs --add=<id> --only-add`. An added id is named only in the snapshot's `added` list, which every later refresh keeps, and the snapshot will not be written unless the id has the prices a quote needs.
+
 With no writer set up, or one the catalogue does not serve, the Treatment's prose is refused before anything is quoted, held or charged: "The Treatment writer is not set up. Nothing billed."
 
 ## Money

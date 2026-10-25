@@ -46,10 +46,10 @@
    "temperature": true,
    "knowledge": "2023-08-31",
    "pricing": {
-    "input": "0.00000025",
-    "output": "0.00000125",
-    "input_cache_read": "0.00000003",
-    "input_cache_write": "0.0000003"
+    "input": "0.000000839",
+    "output": "0.00000369",
+    "input_cache_read": "0.0000000163",
+    "input_cache_write": "0.000000353"
    }
   },
   {
@@ -123,17 +123,17 @@
    ],
    "knowledge": "2026-01-31",
    "pricing": {
-    "input": "0.00001",
-    "output": "0.00005",
-    "input_cache_read": "0.000001",
-    "input_cache_write": "0.0000125",
-    "web_search": "10",
+    "input": "0.0000273",
+    "output": "0.000143",
+    "input_cache_read": "0.00000473",
+    "input_cache_write": "0.0000349",
+    "web_search": "12.9",
     "regional": {
      "us": {
-      "input": "0.000011",
-      "output": "0.000055",
-      "input_cache_read": "0.0000011",
-      "input_cache_write": "0.00001375"
+      "input": "0.0000619",
+      "output": "0.0000919",
+      "input_cache_read": "0.00000219",
+      "input_cache_write": "0.0000229"
      }
     }
    }
@@ -210,17 +210,17 @@
    ],
    "knowledge": "2026-06",
    "pricing": {
-    "input": "0.00001",
-    "output": "0.00005",
-    "input_cache_read": "0.00000025",
-    "input_cache_write": "0.0000125",
-    "web_search": "10",
+    "input": "0.0000273",
+    "output": "0.000143",
+    "input_cache_read": "0.000000839",
+    "input_cache_write": "0.0000349",
+    "web_search": "12.9",
     "regional": {
      "us": {
-      "input": "0.000011",
-      "output": "0.000055",
-      "input_cache_read": "0.000000275",
-      "input_cache_write": "0.00001375"
+      "input": "0.0000619",
+      "output": "0.0000919",
+      "input_cache_read": "0.000000599",
+      "input_cache_write": "0.0000229"
      }
     }
    }
@@ -290,23 +290,23 @@
    "knowledge": "2025-02-28",
    "interleaved": true,
    "pricing": {
-    "input": "0.000001",
-    "output": "0.000005",
-    "input_cache_read": "0.0000001",
-    "input_cache_write": "0.00000125",
-    "web_search": "10",
+    "input": "0.00000473",
+    "output": "0.00000983",
+    "input_cache_read": "0.000000293",
+    "input_cache_write": "0.00000369",
+    "web_search": "12.9",
     "regional": {
      "eu": {
-      "input": "0.0000011",
-      "output": "0.0000055",
-      "input_cache_read": "0.00000011",
-      "input_cache_write": "0.000001375"
+      "input": "0.00000219",
+      "output": "0.00000623",
+      "input_cache_read": "0.000000563",
+      "input_cache_write": "0.00000593"
      },
      "us": {
-      "input": "0.0000011",
-      "output": "0.0000055",
-      "input_cache_read": "0.00000011",
-      "input_cache_write": "0.000001375"
+      "input": "0.00000219",
+      "output": "0.00000623",
+      "input_cache_read": "0.000000563",
+      "input_cache_write": "0.00000593"
      }
     }
    }
@@ -367,11 +367,11 @@
    ],
    "knowledge": "2025-03-31",
    "pricing": {
-    "input": "0.000015",
-    "output": "0.000075",
-    "input_cache_read": "0.0000015",
-    "input_cache_write": "0.00001875",
-    "web_search": "10"
+    "input": "0.0000939",
+    "output": "0.000179",
+    "input_cache_read": "0.00000739",
+    "input_cache_write": "0.0000253",
+    "web_search": "12.9"
    }
   },
   {
@@ -447,23 +447,23 @@
    "knowledge": "2025-05",
    "interleaved": true,
    "pricing": {
-    "input": "0.000005",
-    "output": "0.000025",
-    "input_cache_read": "0.0000005",
-    "input_cache_write": "0.00000625",
-    "web_search": "10",
+    "input": "0.00000983",
+    "output": "0.0000459",
+    "input_cache_read": "0.000000543",
+    "input_cache_write": "0.00000809",
+    "web_search": "12.9",
     "regional": {
      "eu": {
-      "input": "0.0000055",
-      "output": "0.0000275",
-      "input_cache_read": "0.00000055",
-      "input_cache_write": "0.000006875"
+      "input": "0.00000623",
+      "output": "0.0000389",
+      "input_cache_read": "0.000000959",
+      "input_cache_write": "0.00000933"
      },
      "us": {
-      "input": "0.0000055",
-      "output": "0.0000275",
-      "input_cache_read": "0.00000055",
-      "input_cache_write": "0.000006875"
+      "input": "0.00000623",
+      "output": "0.0000389",
+      "input_cache_read": "0.000000959",
+      "input_cache_write": "0.00000933"
      }
     }
    }
@@ -542,28 +542,28 @@
    "knowledge": "2025-05-31",
    "interleaved": true,
    "pricing": {
-    "input": "0.000005",
-    "output": "0.000025",
-    "input_cache_read": "0.0000005",
-    "input_cache_write": "0.00000625",
-    "web_search": "10",
+    "input": "0.00000983",
+    "output": "0.0000459",
+    "input_cache_read": "0.000000543",
+    "input_cache_write": "0.00000809",
+    "web_search": "12.9",
     "regional": {
      "eu": {
-      "input": "0.0000055",
-      "output": "0.0000275",
-      "input_cache_read": "0.00000055",
-      "input_cache_write": "0.000006875"
+      "input": "0.00000623",
+      "output": "0.0000389",
+      "input_cache_read": "0.000000959",
+      "input_cache_write": "0.00000933"
      },
      "us": {
-      "input": "0.0000055",
-      "output": "0.0000275",
-      "input_cache_read": "0.00000055",
-      "input_cache_write": "0.000006875",
+      "input": "0.00000623",
+      "output": "0.0000389",
+      "input_cache_read": "0.000000959",
+      "input_cache_write": "0.00000933",
       "fast": {
-       "input": "0.000033",
-       "output": "0.000165",
-       "input_cache_read": "0.0000033",
-       "input_cache_write": "0.00004125"
+       "input": "0.0000179",
+       "output": "0.000253",
+       "input_cache_read": "0.00000409",
+       "input_cache_write": "0.0000333"
       }
      }
     }
@@ -643,28 +643,28 @@
    ],
    "knowledge": "2026-01-31",
    "pricing": {
-    "input": "0.000005",
-    "output": "0.000025",
-    "input_cache_read": "0.0000005",
-    "input_cache_write": "0.00000625",
-    "web_search": "10",
+    "input": "0.00000983",
+    "output": "0.0000459",
+    "input_cache_read": "0.000000543",
+    "input_cache_write": "0.00000809",
+    "web_search": "12.9",
     "regional": {
      "eu": {
-      "input": "0.0000055",
-      "output": "0.0000275",
-      "input_cache_read": "0.00000055",
-      "input_cache_write": "0.000006875"
+      "input": "0.00000623",
+      "output": "0.0000389",
+      "input_cache_read": "0.000000959",
+      "input_cache_write": "0.00000933"
      },
      "us": {
-      "input": "0.0000055",
-      "output": "0.0000275",
-      "input_cache_read": "0.00000055",
-      "input_cache_write": "0.000006875",
+      "input": "0.00000623",
+      "output": "0.0000389",
+      "input_cache_read": "0.000000959",
+      "input_cache_write": "0.00000933",
       "fast": {
-       "input": "0.000033",
-       "output": "0.000165",
-       "input_cache_read": "0.0000033",
-       "input_cache_write": "0.00004125"
+       "input": "0.0000179",
+       "output": "0.000253",
+       "input_cache_read": "0.00000409",
+       "input_cache_write": "0.0000333"
       }
      }
     }
@@ -745,34 +745,34 @@
    ],
    "knowledge": "2026-01",
    "pricing": {
-    "input": "0.000005",
-    "output": "0.000025",
-    "input_cache_read": "0.0000005",
-    "input_cache_write": "0.00000625",
-    "web_search": "10",
+    "input": "0.00000983",
+    "output": "0.0000459",
+    "input_cache_read": "0.000000543",
+    "input_cache_write": "0.00000809",
+    "web_search": "12.9",
     "fast": {
-     "input": "0.00001",
-     "output": "0.00005",
-     "input_cache_read": "0.000001",
-     "input_cache_write": "0.0000125"
+     "input": "0.0000273",
+     "output": "0.000143",
+     "input_cache_read": "0.00000473",
+     "input_cache_write": "0.0000349"
     },
     "regional": {
      "eu": {
-      "input": "0.0000055",
-      "output": "0.0000275",
-      "input_cache_read": "0.00000055",
-      "input_cache_write": "0.000006875"
+      "input": "0.00000623",
+      "output": "0.0000389",
+      "input_cache_read": "0.000000959",
+      "input_cache_write": "0.00000933"
      },
      "us": {
-      "input": "0.0000055",
-      "output": "0.0000275",
-      "input_cache_read": "0.00000055",
-      "input_cache_write": "0.000006875",
+      "input": "0.00000623",
+      "output": "0.0000389",
+      "input_cache_read": "0.000000959",
+      "input_cache_write": "0.00000933",
       "fast": {
-       "input": "0.000011",
-       "output": "0.000055",
-       "input_cache_read": "0.0000011",
-       "input_cache_write": "0.00001375"
+       "input": "0.0000619",
+       "output": "0.0000919",
+       "input_cache_read": "0.00000219",
+       "input_cache_write": "0.0000229"
       }
      }
     }
@@ -853,17 +853,17 @@
    ],
    "knowledge": "2026-01",
    "pricing": {
-    "input": "0.00001",
-    "output": "0.00005",
-    "input_cache_read": "0.000001",
-    "input_cache_write": "0.0000125",
-    "web_search": "10",
+    "input": "0.0000273",
+    "output": "0.000143",
+    "input_cache_read": "0.00000473",
+    "input_cache_write": "0.0000349",
+    "web_search": "12.9",
     "regional": {
      "us": {
-      "input": "0.000011",
-      "output": "0.000055",
-      "input_cache_read": "0.0000011",
-      "input_cache_write": "0.00001375"
+      "input": "0.0000619",
+      "output": "0.0000919",
+      "input_cache_read": "0.00000219",
+      "input_cache_write": "0.0000229"
      }
     }
    }
@@ -942,34 +942,34 @@
    ],
    "knowledge": "2026-05",
    "pricing": {
-    "input": "0.000005",
-    "output": "0.000025",
-    "input_cache_read": "0.0000005",
-    "input_cache_write": "0.00000625",
-    "web_search": "10",
+    "input": "0.00000983",
+    "output": "0.0000459",
+    "input_cache_read": "0.000000543",
+    "input_cache_write": "0.00000809",
+    "web_search": "12.9",
     "fast": {
-     "input": "0.00001",
-     "output": "0.00005",
-     "input_cache_read": "0.000001",
-     "input_cache_write": "0.0000125"
+     "input": "0.0000273",
+     "output": "0.000143",
+     "input_cache_read": "0.00000473",
+     "input_cache_write": "0.0000349"
     },
     "regional": {
      "eu": {
-      "input": "0.0000055",
-      "output": "0.0000275",
-      "input_cache_read": "0.00000055",
-      "input_cache_write": "0.000006875"
+      "input": "0.00000623",
+      "output": "0.0000389",
+      "input_cache_read": "0.000000959",
+      "input_cache_write": "0.00000933"
      },
      "us": {
-      "input": "0.0000055",
-      "output": "0.0000275",
-      "input_cache_read": "0.00000055",
-      "input_cache_write": "0.000006875",
+      "input": "0.00000623",
+      "output": "0.0000389",
+      "input_cache_read": "0.000000959",
+      "input_cache_write": "0.00000933",
       "fast": {
-       "input": "0.000011",
-       "output": "0.000055",
-       "input_cache_read": "0.0000011",
-       "input_cache_write": "0.00001375"
+       "input": "0.0000619",
+       "output": "0.0000919",
+       "input_cache_read": "0.00000219",
+       "input_cache_write": "0.0000229"
       }
      }
     }
@@ -1049,17 +1049,17 @@
    ],
    "knowledge": "2026-05",
    "pricing": {
-    "input": "0.00001",
-    "output": "0.00005",
-    "input_cache_read": "0.000001",
-    "input_cache_write": "0.0000125",
-    "web_search": "10",
+    "input": "0.0000273",
+    "output": "0.000143",
+    "input_cache_read": "0.00000473",
+    "input_cache_write": "0.0000349",
+    "web_search": "12.9",
     "regional": {
      "us": {
-      "input": "0.000011",
-      "output": "0.000055",
-      "input_cache_read": "0.0000011",
-      "input_cache_write": "0.00001375"
+      "input": "0.0000619",
+      "output": "0.0000919",
+      "input_cache_read": "0.00000219",
+      "input_cache_write": "0.0000229"
      }
     }
    }
@@ -1123,51 +1123,51 @@
    ],
    "knowledge": "2025-03-31",
    "pricing": {
-    "input": "0.000003",
+    "input": "0.00000763",
     "input_tiers": [
      {
-      "cost": "0.000003",
+      "cost": "0.00000763",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000006",
+      "cost": "0.00000359",
       "min": 200001
      }
     ],
-    "output": "0.000015",
+    "output": "0.0000939",
     "output_tiers": [
      {
-      "cost": "0.000015",
+      "cost": "0.0000939",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.0000225",
+      "cost": "0.0000973",
       "min": 200001
      }
     ],
-    "input_cache_read": "0.0000003",
+    "input_cache_read": "0.000000353",
     "input_cache_read_tiers": [
      {
-      "cost": "0.0000003",
+      "cost": "0.000000353",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.0000006",
+      "cost": "0.000000233",
       "min": 200001
      }
     ],
-    "input_cache_write": "0.00000375",
+    "input_cache_write": "0.00000659",
     "input_cache_write_tiers": [
      {
-      "cost": "0.00000375",
+      "cost": "0.00000659",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.0000075",
+      "cost": "0.00000869",
       "min": 200001
      }
     ]
@@ -1237,152 +1237,152 @@
    ],
    "knowledge": "2025-07-31",
    "pricing": {
-    "input": "0.000003",
+    "input": "0.00000763",
     "input_tiers": [
      {
-      "cost": "0.000003",
+      "cost": "0.00000763",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000006",
+      "cost": "0.00000359",
       "min": 200001
      }
     ],
-    "output": "0.000015",
+    "output": "0.0000939",
     "output_tiers": [
      {
-      "cost": "0.000015",
+      "cost": "0.0000939",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.0000225",
+      "cost": "0.0000973",
       "min": 200001
      }
     ],
-    "input_cache_read": "0.0000003",
+    "input_cache_read": "0.000000353",
     "input_cache_read_tiers": [
      {
-      "cost": "0.0000003",
+      "cost": "0.000000353",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.0000006",
+      "cost": "0.000000233",
       "min": 200001
      }
     ],
-    "input_cache_write": "0.00000375",
+    "input_cache_write": "0.00000659",
     "input_cache_write_tiers": [
      {
-      "cost": "0.00000375",
+      "cost": "0.00000659",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.0000075",
+      "cost": "0.00000869",
       "min": 200001
      }
     ],
-    "web_search": "10",
+    "web_search": "12.9",
     "regional": {
      "eu": {
-      "input": "0.0000033",
+      "input": "0.00000409",
       "input_tiers": [
        {
-        "cost": "0.0000033",
+        "cost": "0.00000409",
         "min": 0,
         "max": 200001
        },
        {
-        "cost": "0.0000066",
+        "cost": "0.00000149",
         "min": 200001
        }
       ],
-      "output": "0.0000165",
+      "output": "0.0000313",
       "output_tiers": [
        {
-        "cost": "0.0000165",
+        "cost": "0.0000313",
         "min": 0,
         "max": 200001
        },
        {
-        "cost": "0.00002475",
+        "cost": "0.0000743",
         "min": 200001
        }
       ],
-      "input_cache_read": "0.00000033",
+      "input_cache_read": "0.000000779",
       "input_cache_read_tiers": [
        {
-        "cost": "0.00000033",
+        "cost": "0.000000779",
         "min": 0,
         "max": 200001
        },
        {
-        "cost": "0.00000066",
+        "cost": "0.000000413",
         "min": 200001
        }
       ],
-      "input_cache_write": "0.000004125",
+      "input_cache_write": "0.00000389",
       "input_cache_write_tiers": [
        {
-        "cost": "0.000004125",
+        "cost": "0.00000389",
         "min": 0,
         "max": 200001
        },
        {
-        "cost": "0.00000825",
+        "cost": "0.00000189",
         "min": 200001
        }
       ]
      },
      "us": {
-      "input": "0.0000033",
+      "input": "0.00000409",
       "input_tiers": [
        {
-        "cost": "0.0000033",
+        "cost": "0.00000409",
         "min": 0,
         "max": 200001
        },
        {
-        "cost": "0.0000066",
+        "cost": "0.00000149",
         "min": 200001
        }
       ],
-      "output": "0.0000165",
+      "output": "0.0000313",
       "output_tiers": [
        {
-        "cost": "0.0000165",
+        "cost": "0.0000313",
         "min": 0,
         "max": 200001
        },
        {
-        "cost": "0.00002475",
+        "cost": "0.0000743",
         "min": 200001
        }
       ],
-      "input_cache_read": "0.00000033",
+      "input_cache_read": "0.000000779",
       "input_cache_read_tiers": [
        {
-        "cost": "0.00000033",
+        "cost": "0.000000779",
         "min": 0,
         "max": 200001
        },
        {
-        "cost": "0.00000066",
+        "cost": "0.000000413",
         "min": 200001
        }
       ],
-      "input_cache_write": "0.000004125",
+      "input_cache_write": "0.00000389",
       "input_cache_write_tiers": [
        {
-        "cost": "0.000004125",
+        "cost": "0.00000389",
         "min": 0,
         "max": 200001
        },
        {
-        "cost": "0.00000825",
+        "cost": "0.00000189",
         "min": 200001
        }
       ]
@@ -1464,23 +1464,23 @@
    "knowledge": "2025-08-31",
    "interleaved": true,
    "pricing": {
-    "input": "0.000003",
-    "output": "0.000015",
-    "input_cache_read": "0.0000003",
-    "input_cache_write": "0.00000375",
-    "web_search": "10",
+    "input": "0.00000763",
+    "output": "0.0000939",
+    "input_cache_read": "0.000000353",
+    "input_cache_write": "0.00000659",
+    "web_search": "12.9",
     "regional": {
      "eu": {
-      "input": "0.0000033",
-      "output": "0.0000165",
-      "input_cache_read": "0.00000033",
-      "input_cache_write": "0.000004125"
+      "input": "0.00000409",
+      "output": "0.0000313",
+      "input_cache_read": "0.000000779",
+      "input_cache_write": "0.00000389"
      },
      "us": {
-      "input": "0.0000033",
-      "output": "0.0000165",
-      "input_cache_read": "0.00000033",
-      "input_cache_write": "0.000004125"
+      "input": "0.00000409",
+      "output": "0.0000313",
+      "input_cache_read": "0.000000779",
+      "input_cache_write": "0.00000389"
      }
     }
    }
@@ -1558,23 +1558,23 @@
    ],
    "knowledge": "2026-01-31",
    "pricing": {
-    "input": "0.000002",
-    "output": "0.00001",
-    "input_cache_read": "0.0000002",
-    "input_cache_write": "0.0000025",
-    "web_search": "10",
+    "input": "0.00000719",
+    "output": "0.0000273",
+    "input_cache_read": "0.000000613",
+    "input_cache_write": "0.00000489",
+    "web_search": "12.9",
     "regional": {
      "eu": {
-      "input": "0.0000022",
-      "output": "0.000011",
-      "input_cache_read": "0.00000022",
-      "input_cache_write": "0.00000275"
+      "input": "0.00000949",
+      "output": "0.0000619",
+      "input_cache_read": "0.000000249",
+      "input_cache_write": "0.00000579"
      },
      "us": {
-      "input": "0.0000022",
-      "output": "0.000011",
-      "input_cache_read": "0.00000022",
-      "input_cache_write": "0.00000275"
+      "input": "0.00000949",
+      "output": "0.0000619",
+      "input_cache_read": "0.000000249",
+      "input_cache_write": "0.00000579"
      }
     }
    }
@@ -1651,32 +1651,32 @@
    ],
    "knowledge": "2025-01",
    "pricing": {
-    "input": "0.0000003",
-    "output": "0.0000025",
-    "input_cache_read": "0.00000003",
-    "web_search": "35",
-    "maps_search": "25",
+    "input": "0.000000353",
+    "output": "0.00000489",
+    "input_cache_read": "0.0000000163",
+    "web_search": "31.3",
+    "maps_search": "21.9",
     "service_tiers": {
      "priority": {
-      "input": "0.00000054",
-      "output": "0.0000045",
-      "input_cache_read": "0.000000054"
+      "input": "0.000000319",
+      "output": "0.00000699",
+      "input_cache_read": "0.0000000239"
      },
      "flex": {
-      "input": "0.00000015",
-      "output": "0.00000125"
+      "input": "0.000000193",
+      "output": "0.00000369"
      }
     },
     "regional": {
      "eu": {
-      "input": "0.0000003",
-      "output": "0.0000025",
-      "input_cache_read": "0.00000003"
+      "input": "0.000000353",
+      "output": "0.00000489",
+      "input_cache_read": "0.0000000163"
      },
      "us": {
-      "input": "0.0000003",
-      "output": "0.0000025",
-      "input_cache_read": "0.00000003"
+      "input": "0.000000353",
+      "output": "0.00000489",
+      "input_cache_read": "0.0000000163"
      }
     }
    }
@@ -1753,32 +1753,32 @@
    ],
    "knowledge": "2025-01",
    "pricing": {
-    "input": "0.0000001",
-    "output": "0.0000004",
-    "input_cache_read": "0.00000001",
-    "web_search": "35",
-    "maps_search": "25",
+    "input": "0.000000293",
+    "output": "0.000000449",
+    "input_cache_read": "0.0000000283",
+    "web_search": "31.3",
+    "maps_search": "21.9",
     "service_tiers": {
      "priority": {
-      "input": "0.00000018",
-      "output": "0.00000072",
-      "input_cache_read": "0.000000018"
+      "input": "0.000000989",
+      "output": "0.000000109",
+      "input_cache_read": "0.0000000619"
      },
      "flex": {
-      "input": "0.00000005",
-      "output": "0.0000002"
+      "input": "0.0000000583",
+      "output": "0.000000613"
      }
     },
     "regional": {
      "eu": {
-      "input": "0.0000001",
-      "output": "0.0000004",
-      "input_cache_read": "0.00000001"
+      "input": "0.000000293",
+      "output": "0.000000449",
+      "input_cache_read": "0.0000000283"
      },
      "us": {
-      "input": "0.0000001",
-      "output": "0.0000004",
-      "input_cache_read": "0.00000001"
+      "input": "0.000000293",
+      "output": "0.000000449",
+      "input_cache_read": "0.0000000283"
      }
     }
    }
@@ -1855,139 +1855,139 @@
    ],
    "knowledge": "2025-01",
    "pricing": {
-    "input": "0.00000125",
+    "input": "0.00000369",
     "input_tiers": [
      {
-      "cost": "0.00000125",
+      "cost": "0.00000369",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.0000025",
+      "cost": "0.00000489",
       "min": 200001
      }
     ],
-    "output": "0.00001",
+    "output": "0.0000273",
     "output_tiers": [
      {
-      "cost": "0.00001",
+      "cost": "0.0000273",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000015",
+      "cost": "0.0000939",
       "min": 200001
      }
     ],
-    "input_cache_read": "0.000000125",
+    "input_cache_read": "0.000000709",
     "input_cache_read_tiers": [
      {
-      "cost": "0.000000125",
+      "cost": "0.000000709",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.00000025",
+      "cost": "0.000000839",
       "min": 200001
      }
     ],
-    "web_search": "35",
-    "maps_search": "25",
+    "web_search": "31.3",
+    "maps_search": "21.9",
     "service_tiers": {
      "priority": {
-      "input": "0.00000225",
-      "output": "0.000018",
-      "input_cache_read": "0.000000225",
+      "input": "0.00000203",
+      "output": "0.0000883",
+      "input_cache_read": "0.000000473",
       "long_context": {
        "threshold": 200001,
-       "input": "0.0000045",
-       "output": "0.000027",
-       "input_cache_read": "0.00000045"
+       "input": "0.00000699",
+       "output": "0.0000613",
+       "input_cache_read": "0.000000803"
       }
      },
      "flex": {
-      "input": "0.000000625",
-      "output": "0.000005",
+      "input": "0.000000649",
+      "output": "0.00000983",
       "long_context": {
        "threshold": 200001,
-       "input": "0.00000125",
-       "output": "0.0000075"
+       "input": "0.00000369",
+       "output": "0.00000869"
       }
      }
     },
     "regional": {
      "eu": {
-      "input": "0.00000125",
+      "input": "0.00000369",
       "input_tiers": [
        {
-        "cost": "0.00000125",
+        "cost": "0.00000369",
         "min": 0,
         "max": 200001
        },
        {
-        "cost": "0.0000025",
+        "cost": "0.00000489",
         "min": 200001
        }
       ],
-      "output": "0.00001",
+      "output": "0.0000273",
       "output_tiers": [
        {
-        "cost": "0.00001",
+        "cost": "0.0000273",
         "min": 0,
         "max": 200001
        },
        {
-        "cost": "0.000015",
+        "cost": "0.0000939",
         "min": 200001
        }
       ],
-      "input_cache_read": "0.000000125",
+      "input_cache_read": "0.000000709",
       "input_cache_read_tiers": [
        {
-        "cost": "0.000000125",
+        "cost": "0.000000709",
         "min": 0,
         "max": 200001
        },
        {
-        "cost": "0.00000025",
+        "cost": "0.000000839",
         "min": 200001
        }
       ]
      },
      "us": {
-      "input": "0.00000125",
+      "input": "0.00000369",
       "input_tiers": [
        {
-        "cost": "0.00000125",
+        "cost": "0.00000369",
         "min": 0,
         "max": 200001
        },
        {
-        "cost": "0.0000025",
+        "cost": "0.00000489",
         "min": 200001
        }
       ],
-      "output": "0.00001",
+      "output": "0.0000273",
       "output_tiers": [
        {
-        "cost": "0.00001",
+        "cost": "0.0000273",
         "min": 0,
         "max": 200001
        },
        {
-        "cost": "0.000015",
+        "cost": "0.0000939",
         "min": 200001
        }
       ],
-      "input_cache_read": "0.000000125",
+      "input_cache_read": "0.000000709",
       "input_cache_read_tiers": [
        {
-        "cost": "0.000000125",
+        "cost": "0.000000709",
         "min": 0,
         "max": 200001
        },
        {
-        "cost": "0.00000025",
+        "cost": "0.000000839",
         "min": 200001
        }
       ]
@@ -2055,53 +2055,53 @@
    ],
    "knowledge": "2025-03",
    "pricing": {
-    "input": "0.0000005",
+    "input": "0.000000543",
     "input_tiers": [
      {
-      "cost": "0.0000005",
+      "cost": "0.000000543",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.0000005",
+      "cost": "0.000000543",
       "min": 200001
      }
     ],
-    "output": "0.000003",
+    "output": "0.00000763",
     "output_tiers": [
      {
-      "cost": "0.000003",
+      "cost": "0.00000763",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000003",
+      "cost": "0.00000763",
       "min": 200001
      }
     ],
-    "input_cache_read": "0.00000005",
+    "input_cache_read": "0.0000000583",
     "input_cache_read_tiers": [
      {
-      "cost": "0.00000005",
+      "cost": "0.0000000583",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.00000005",
+      "cost": "0.0000000583",
       "min": 200001
      }
     ],
-    "web_search": "14",
-    "maps_search": "14",
+    "web_search": "17.3",
+    "maps_search": "17.3",
     "service_tiers": {
      "priority": {
-      "input": "0.0000009",
-      "output": "0.0000054",
-      "input_cache_read": "0.00000009"
+      "input": "0.000000189",
+      "output": "0.00000213",
+      "input_cache_read": "0.0000000919"
      },
      "flex": {
-      "input": "0.00000025",
-      "output": "0.0000015"
+      "input": "0.000000839",
+      "output": "0.00000739"
      }
     }
    }
@@ -2162,33 +2162,33 @@
    ],
    "knowledge": "2025-01",
    "pricing": {
-    "input": "0.000002",
-    "output": "0.000012",
-    "input_cache_read": "0.0000002",
+    "input": "0.00000719",
+    "output": "0.0000859",
+    "input_cache_read": "0.000000613",
     "image_dimension_quality_pricing": [
      {
       "size": "1K",
-      "cost": "0.1344"
+      "cost": "0.209"
      },
      {
       "size": "2K",
-      "cost": "0.1344"
+      "cost": "0.209"
      },
      {
       "size": "4K",
-      "cost": "0.24"
+      "cost": "0.313"
      },
      {
       "size": "default",
-      "cost": "0.1344"
+      "cost": "0.209"
      }
     ],
-    "web_search": "14",
-    "maps_search": "14",
+    "web_search": "17.3",
+    "maps_search": "17.3",
     "service_tiers": {
      "flex": {
-      "input": "0.000001",
-      "output": "0.000006"
+      "input": "0.00000473",
+      "output": "0.00000359"
      }
     }
    }
@@ -2250,33 +2250,33 @@
    ],
    "knowledge": "2025-01",
    "pricing": {
-    "input": "0.0000005",
-    "output": "0.000003",
-    "input_cache_read": "0.00000005",
+    "input": "0.000000543",
+    "output": "0.00000763",
+    "input_cache_read": "0.0000000583",
     "image_dimension_quality_pricing": [
      {
       "size": "512",
-      "cost": "0.045"
+      "cost": "0.0589"
      },
      {
       "size": "1K",
-      "cost": "0.067"
+      "cost": "0.0799"
      },
      {
       "size": "2K",
-      "cost": "0.101"
+      "cost": "0.163"
      },
      {
       "size": "4K",
-      "cost": "0.151"
+      "cost": "0.119"
      },
      {
       "size": "default",
-      "cost": "0.067"
+      "cost": "0.0799"
      }
     ],
-    "web_search": "14",
-    "maps_search": "14"
+    "web_search": "17.3",
+    "maps_search": "17.3"
    }
   },
   {
@@ -2343,33 +2343,33 @@
    ],
    "knowledge": "2025-01",
    "pricing": {
-    "input": "0.00000025",
-    "output": "0.0000015",
-    "input_cache_read": "0.00000003",
-    "web_search": "14",
-    "maps_search": "14",
+    "input": "0.000000839",
+    "output": "0.00000739",
+    "input_cache_read": "0.0000000163",
+    "web_search": "17.3",
+    "maps_search": "17.3",
     "service_tiers": {
      "priority": {
-      "input": "0.00000045",
-      "output": "0.0000027",
-      "input_cache_read": "0.000000045"
+      "input": "0.000000803",
+      "output": "0.00000139",
+      "input_cache_read": "0.0000000949"
      },
      "flex": {
-      "input": "0.000000125",
-      "output": "0.00000075",
-      "input_cache_read": "0.0000000125"
+      "input": "0.000000709",
+      "output": "0.000000573",
+      "input_cache_read": "0.0000000859"
      }
     },
     "regional": {
      "eu": {
-      "input": "0.000000275",
-      "output": "0.00000165",
-      "input_cache_read": "0.0000000275"
+      "input": "0.000000599",
+      "output": "0.00000979",
+      "input_cache_read": "0.0000000739"
      },
      "us": {
-      "input": "0.000000275",
-      "output": "0.00000165",
-      "input_cache_read": "0.0000000275"
+      "input": "0.000000599",
+      "output": "0.00000979",
+      "input_cache_read": "0.0000000739"
      }
     }
    }
@@ -2434,63 +2434,63 @@
    ],
    "knowledge": "2025-01",
    "pricing": {
-    "input": "0.000002",
+    "input": "0.00000719",
     "input_tiers": [
      {
-      "cost": "0.000002",
+      "cost": "0.00000719",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000004",
+      "cost": "0.00000843",
       "min": 200001
      }
     ],
-    "output": "0.000012",
+    "output": "0.0000859",
     "output_tiers": [
      {
-      "cost": "0.000012",
+      "cost": "0.0000859",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000018",
+      "cost": "0.0000883",
       "min": 200001
      }
     ],
-    "input_cache_read": "0.0000002",
+    "input_cache_read": "0.000000613",
     "input_cache_read_tiers": [
      {
-      "cost": "0.0000002",
+      "cost": "0.000000613",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.0000004",
+      "cost": "0.000000449",
       "min": 200001
      }
     ],
-    "web_search": "14",
-    "maps_search": "14",
+    "web_search": "17.3",
+    "maps_search": "17.3",
     "service_tiers": {
      "priority": {
-      "input": "0.0000036",
-      "output": "0.0000216",
-      "input_cache_read": "0.00000036",
+      "input": "0.00000233",
+      "output": "0.0000809",
+      "input_cache_read": "0.000000269",
       "long_context": {
        "threshold": 200001,
-       "input": "0.0000072",
-       "output": "0.0000324",
-       "input_cache_read": "0.00000072"
+       "input": "0.00000463",
+       "output": "0.0000943",
+       "input_cache_read": "0.000000109"
       }
      },
      "flex": {
-      "input": "0.000001",
-      "output": "0.000006",
+      "input": "0.00000473",
+      "output": "0.00000359",
       "long_context": {
        "threshold": 200001,
-       "input": "0.000002",
-       "output": "0.000009"
+       "input": "0.00000719",
+       "output": "0.00000439"
       }
      }
     }
@@ -2562,33 +2562,33 @@
    ],
    "knowledge": "2025-01",
    "pricing": {
-    "input": "0.0000015",
-    "output": "0.000009",
-    "input_cache_read": "0.00000015",
-    "web_search": "14",
-    "maps_search": "14",
+    "input": "0.00000739",
+    "output": "0.00000439",
+    "input_cache_read": "0.000000193",
+    "web_search": "17.3",
+    "maps_search": "17.3",
     "service_tiers": {
      "priority": {
-      "input": "0.0000027",
-      "output": "0.0000162",
-      "input_cache_read": "0.00000027"
+      "input": "0.00000139",
+      "output": "0.0000579",
+      "input_cache_read": "0.000000123"
      },
      "flex": {
-      "input": "0.00000075",
-      "output": "0.0000045",
-      "input_cache_read": "0.00000008"
+      "input": "0.000000573",
+      "output": "0.00000699",
+      "input_cache_read": "0.0000000133"
      }
     },
     "regional": {
      "eu": {
-      "input": "0.00000165",
-      "output": "0.0000099",
-      "input_cache_read": "0.000000165"
+      "input": "0.00000979",
+      "output": "0.00000613",
+      "input_cache_read": "0.000000769"
      },
      "us": {
-      "input": "0.00000165",
-      "output": "0.0000099",
-      "input_cache_read": "0.000000165"
+      "input": "0.00000979",
+      "output": "0.00000613",
+      "input_cache_read": "0.000000769"
      }
     }
    }
@@ -2659,33 +2659,33 @@
    ],
    "knowledge": "2026-03",
    "pricing": {
-    "input": "0.0000003",
-    "output": "0.0000025",
-    "input_cache_read": "0.00000003",
-    "web_search": "14",
-    "maps_search": "14",
+    "input": "0.000000353",
+    "output": "0.00000489",
+    "input_cache_read": "0.0000000163",
+    "web_search": "17.3",
+    "maps_search": "17.3",
     "service_tiers": {
      "priority": {
-      "input": "0.00000054",
-      "output": "0.0000045",
-      "input_cache_read": "0.000000054"
+      "input": "0.000000319",
+      "output": "0.00000699",
+      "input_cache_read": "0.0000000239"
      },
      "flex": {
-      "input": "0.00000015",
-      "output": "0.00000125",
-      "input_cache_read": "0.000000015"
+      "input": "0.000000193",
+      "output": "0.00000369",
+      "input_cache_read": "0.0000000343"
      }
     },
     "regional": {
      "eu": {
-      "input": "0.00000033",
-      "output": "0.00000275",
-      "input_cache_read": "0.000000033"
+      "input": "0.000000779",
+      "output": "0.00000579",
+      "input_cache_read": "0.0000000889"
      },
      "us": {
-      "input": "0.00000033",
-      "output": "0.00000275",
-      "input_cache_read": "0.000000033"
+      "input": "0.000000779",
+      "output": "0.00000579",
+      "input_cache_read": "0.0000000889"
      }
     }
    }
@@ -2756,33 +2756,33 @@
    ],
    "knowledge": "2026-03",
    "pricing": {
-    "input": "0.00000075",
-    "output": "0.00000375",
-    "input_cache_read": "0.000000075",
-    "web_search": "14",
-    "maps_search": "14",
+    "input": "0.000000573",
+    "output": "0.00000659",
+    "input_cache_read": "0.0000000409",
+    "web_search": "17.3",
+    "maps_search": "17.3",
     "service_tiers": {
      "priority": {
-      "input": "0.00000135",
-      "output": "0.00000675",
-      "input_cache_read": "0.000000135"
+      "input": "0.00000129",
+      "output": "0.00000573",
+      "input_cache_read": "0.000000159"
      },
      "flex": {
-      "input": "0.000000375",
-      "output": "0.000001875",
-      "input_cache_read": "0.00000004"
+      "input": "0.000000683",
+      "output": "0.00000889",
+      "input_cache_read": "0.0000000679"
      }
     },
     "regional": {
      "eu": {
-      "input": "0.000000825",
-      "output": "0.000004125",
-      "input_cache_read": "0.0000000825"
+      "input": "0.000000383",
+      "output": "0.00000389",
+      "input_cache_read": "0.0000000829"
      },
      "us": {
-      "input": "0.000000825",
-      "output": "0.000004125",
-      "input_cache_read": "0.0000000825"
+      "input": "0.000000383",
+      "output": "0.00000389",
+      "input_cache_read": "0.0000000829"
      }
     }
    }
@@ -2853,33 +2853,33 @@
    ],
    "knowledge": "2026-03",
    "pricing": {
-    "input": "0.00000075",
-    "output": "0.00000375",
-    "input_cache_read": "0.000000075",
-    "web_search": "14",
-    "maps_search": "14",
+    "input": "0.000000573",
+    "output": "0.00000659",
+    "input_cache_read": "0.0000000409",
+    "web_search": "17.3",
+    "maps_search": "17.3",
     "service_tiers": {
      "flex": {
-      "input": "0.000000375",
-      "output": "0.000001875",
-      "input_cache_read": "0.0000000375"
+      "input": "0.000000683",
+      "output": "0.00000889",
+      "input_cache_read": "0.0000000423"
      },
      "priority": {
-      "input": "0.00000135",
-      "output": "0.00000675",
-      "input_cache_read": "0.000000135"
+      "input": "0.00000129",
+      "output": "0.00000573",
+      "input_cache_read": "0.000000159"
      }
     },
     "regional": {
      "eu": {
-      "input": "0.000000825",
-      "output": "0.000004125",
-      "input_cache_read": "0.0000000825"
+      "input": "0.000000383",
+      "output": "0.00000389",
+      "input_cache_read": "0.0000000829"
      },
      "us": {
-      "input": "0.000000825",
-      "output": "0.000004125",
-      "input_cache_read": "0.0000000825"
+      "input": "0.000000383",
+      "output": "0.00000389",
+      "input_cache_read": "0.0000000829"
      }
     }
    }
@@ -2949,33 +2949,33 @@
     }
    ],
    "pricing": {
-    "input": "0.00000075",
-    "output": "0.00000375",
-    "input_cache_read": "0.000000075",
-    "web_search": "14",
-    "maps_search": "14",
+    "input": "0.000000573",
+    "output": "0.00000659",
+    "input_cache_read": "0.0000000409",
+    "web_search": "17.3",
+    "maps_search": "17.3",
     "service_tiers": {
      "flex": {
-      "input": "0.000000375",
-      "output": "0.000001875",
-      "input_cache_read": "0.0000000375"
+      "input": "0.000000683",
+      "output": "0.00000889",
+      "input_cache_read": "0.0000000423"
      },
      "priority": {
-      "input": "0.00000135",
-      "output": "0.00000675",
-      "input_cache_read": "0.000000135"
+      "input": "0.00000129",
+      "output": "0.00000573",
+      "input_cache_read": "0.000000159"
      }
     },
     "regional": {
      "eu": {
-      "input": "0.000000825",
-      "output": "0.000004125",
-      "input_cache_read": "0.0000000825"
+      "input": "0.000000383",
+      "output": "0.00000389",
+      "input_cache_read": "0.0000000829"
      },
      "us": {
-      "input": "0.000000825",
-      "output": "0.000004125",
-      "input_cache_read": "0.0000000825"
+      "input": "0.000000383",
+      "output": "0.00000389",
+      "input_cache_read": "0.0000000829"
      }
     }
    }
@@ -3019,8 +3019,8 @@
    "temperature": true,
    "knowledge": "2021-09-01",
    "pricing": {
-    "input": "0.0000005",
-    "output": "0.0000015"
+    "input": "0.000000543",
+    "output": "0.00000739"
    }
   },
   {
@@ -3064,8 +3064,8 @@
    "temperature": true,
    "knowledge": "2023-12-01",
    "pricing": {
-    "input": "0.00001",
-    "output": "0.00003"
+    "input": "0.0000273",
+    "output": "0.0000239"
    }
   },
   {
@@ -3117,21 +3117,21 @@
    "temperature": true,
    "knowledge": "2024-06-01",
    "pricing": {
-    "input": "0.000002",
-    "output": "0.000008",
-    "input_cache_read": "0.0000005",
-    "web_search": "10",
+    "input": "0.00000719",
+    "output": "0.00000323",
+    "input_cache_read": "0.000000543",
+    "web_search": "12.9",
     "service_tiers": {
      "priority": {
-      "input": "0.0000035",
-      "output": "0.000014",
-      "input_cache_read": "0.000000875"
+      "input": "0.00000919",
+      "output": "0.0000483",
+      "input_cache_read": "0.000000939"
      }
     },
     "fast": {
-     "input": "0.0000035",
-     "output": "0.000014",
-     "input_cache_read": "0.000000875"
+     "input": "0.00000919",
+     "output": "0.0000483",
+     "input_cache_read": "0.000000939"
     }
    }
   },
@@ -3184,10 +3184,10 @@
    "temperature": true,
    "knowledge": "2024-06-01",
    "pricing": {
-    "input": "0.0000035",
-    "output": "0.000014",
-    "input_cache_read": "0.000000875",
-    "web_search": "10"
+    "input": "0.00000919",
+    "output": "0.0000483",
+    "input_cache_read": "0.000000939",
+    "web_search": "12.9"
    }
   },
   {
@@ -3239,21 +3239,21 @@
    "temperature": true,
    "knowledge": "2024-06-01",
    "pricing": {
-    "input": "0.0000004",
-    "output": "0.0000016",
-    "input_cache_read": "0.0000001",
-    "web_search": "10",
+    "input": "0.000000449",
+    "output": "0.00000313",
+    "input_cache_read": "0.000000293",
+    "web_search": "12.9",
     "service_tiers": {
      "priority": {
-      "input": "0.0000007",
-      "output": "0.0000028",
-      "input_cache_read": "0.000000175"
+      "input": "0.000000869",
+      "output": "0.00000293",
+      "input_cache_read": "0.000000333"
      }
     },
     "fast": {
-     "input": "0.0000007",
-     "output": "0.0000028",
-     "input_cache_read": "0.000000175"
+     "input": "0.000000869",
+     "output": "0.00000293",
+     "input_cache_read": "0.000000333"
     }
    }
   },
@@ -3306,10 +3306,10 @@
    "temperature": true,
    "knowledge": "2024-06-01",
    "pricing": {
-    "input": "0.0000007",
-    "output": "0.0000028",
-    "input_cache_read": "0.000000175",
-    "web_search": "10"
+    "input": "0.000000869",
+    "output": "0.00000293",
+    "input_cache_read": "0.000000333",
+    "web_search": "12.9"
    }
   },
   {
@@ -3361,22 +3361,22 @@
    "temperature": true,
    "knowledge": "2024-06-01",
    "pricing": {
-    "input": "0.0000001",
-    "output": "0.0000004",
-    "input_cache_read": "0.000000025",
-    "web_search": "10",
+    "input": "0.000000293",
+    "output": "0.000000449",
+    "input_cache_read": "0.0000000553",
+    "web_search": "12.9",
     "service_tiers": {
      "priority": {
-      "input": "0.0000002",
-      "output": "0.0000008",
-      "input_cache_read": "0.00000005"
+      "input": "0.000000613",
+      "output": "0.000000729",
+      "input_cache_read": "0.0000000583"
      }
     },
     "varies_by_provider": true,
     "fast": {
-     "input": "0.0000002",
-     "output": "0.0000008",
-     "input_cache_read": "0.00000005"
+     "input": "0.000000613",
+     "output": "0.000000729",
+     "input_cache_read": "0.0000000583"
     }
    }
   },
@@ -3429,10 +3429,10 @@
    "temperature": true,
    "knowledge": "2024-06-01",
    "pricing": {
-    "input": "0.0000002",
-    "output": "0.0000008",
-    "input_cache_read": "0.00000005",
-    "web_search": "10"
+    "input": "0.000000613",
+    "output": "0.000000729",
+    "input_cache_read": "0.0000000583",
+    "web_search": "12.9"
    }
   },
   {
@@ -3488,32 +3488,32 @@
    "temperature": true,
    "knowledge": "2023-10-01",
    "pricing": {
-    "input": "0.0000025",
-    "output": "0.00001",
-    "input_cache_read": "0.00000125",
-    "web_search": "10",
+    "input": "0.00000489",
+    "output": "0.0000273",
+    "input_cache_read": "0.00000369",
+    "web_search": "12.9",
     "service_tiers": {
      "priority": {
-      "input": "0.00000425",
-      "output": "0.000017",
-      "input_cache_read": "0.000002125"
+      "input": "0.00000529",
+      "output": "0.0000769",
+      "input_cache_read": "0.00000343"
      }
     },
     "fast": {
-     "input": "0.00000425",
-     "output": "0.000017",
-     "input_cache_read": "0.000002125"
+     "input": "0.00000529",
+     "output": "0.0000769",
+     "input_cache_read": "0.00000343"
     },
     "regional": {
      "eu": {
-      "input": "0.0000025",
-      "output": "0.00001",
-      "input_cache_read": "0.00000125"
+      "input": "0.00000489",
+      "output": "0.0000273",
+      "input_cache_read": "0.00000369"
      },
      "us": {
-      "input": "0.0000025",
-      "output": "0.00001",
-      "input_cache_read": "0.00000125"
+      "input": "0.00000489",
+      "output": "0.0000273",
+      "input_cache_read": "0.00000369"
      }
     }
    }
@@ -3571,20 +3571,20 @@
    "temperature": true,
    "knowledge": "2023-10-01",
    "pricing": {
-    "input": "0.00000425",
-    "output": "0.000017",
-    "input_cache_read": "0.000002125",
-    "web_search": "10",
+    "input": "0.00000529",
+    "output": "0.0000769",
+    "input_cache_read": "0.00000343",
+    "web_search": "12.9",
     "regional": {
      "eu": {
-      "input": "0.00000425",
-      "output": "0.000017",
-      "input_cache_read": "0.000002125"
+      "input": "0.00000529",
+      "output": "0.0000769",
+      "input_cache_read": "0.00000343"
      },
      "us": {
-      "input": "0.00000425",
-      "output": "0.000017",
-      "input_cache_read": "0.000002125"
+      "input": "0.00000529",
+      "output": "0.0000769",
+      "input_cache_read": "0.00000343"
      }
     }
    }
@@ -3642,32 +3642,32 @@
    "temperature": true,
    "knowledge": "2023-10-01",
    "pricing": {
-    "input": "0.00000015",
-    "output": "0.0000006",
-    "input_cache_read": "0.000000075",
-    "web_search": "10",
+    "input": "0.000000193",
+    "output": "0.000000233",
+    "input_cache_read": "0.0000000409",
+    "web_search": "12.9",
     "service_tiers": {
      "priority": {
-      "input": "0.00000025",
-      "output": "0.000001",
-      "input_cache_read": "0.000000125"
+      "input": "0.000000839",
+      "output": "0.00000473",
+      "input_cache_read": "0.000000709"
      }
     },
     "fast": {
-     "input": "0.00000025",
-     "output": "0.000001",
-     "input_cache_read": "0.000000125"
+     "input": "0.000000839",
+     "output": "0.00000473",
+     "input_cache_read": "0.000000709"
     },
     "regional": {
      "eu": {
-      "input": "0.00000015",
-      "output": "0.0000006",
-      "input_cache_read": "0.000000075"
+      "input": "0.000000193",
+      "output": "0.000000233",
+      "input_cache_read": "0.0000000409"
      },
      "us": {
-      "input": "0.00000015",
-      "output": "0.0000006",
-      "input_cache_read": "0.000000075"
+      "input": "0.000000193",
+      "output": "0.000000233",
+      "input_cache_read": "0.0000000409"
      }
     }
    }
@@ -3725,20 +3725,20 @@
    "temperature": true,
    "knowledge": "2023-10-01",
    "pricing": {
-    "input": "0.00000025",
-    "output": "0.000001",
-    "input_cache_read": "0.000000125",
-    "web_search": "10",
+    "input": "0.000000839",
+    "output": "0.00000473",
+    "input_cache_read": "0.000000709",
+    "web_search": "12.9",
     "regional": {
      "eu": {
-      "input": "0.00000025",
-      "output": "0.000001",
-      "input_cache_read": "0.000000125"
+      "input": "0.000000839",
+      "output": "0.00000473",
+      "input_cache_read": "0.000000709"
      },
      "us": {
-      "input": "0.00000025",
-      "output": "0.000001",
-      "input_cache_read": "0.000000125"
+      "input": "0.000000839",
+      "output": "0.00000473",
+      "input_cache_read": "0.000000709"
      }
     }
    }
@@ -3805,27 +3805,27 @@
    ],
    "knowledge": "2024-09-30",
    "pricing": {
-    "input": "0.00000125",
-    "output": "0.00001",
-    "input_cache_read": "0.000000125",
-    "web_search": "10",
+    "input": "0.00000369",
+    "output": "0.0000273",
+    "input_cache_read": "0.000000709",
+    "web_search": "12.9",
     "service_tiers": {
      "priority": {
-      "input": "0.0000025",
-      "output": "0.00002",
-      "input_cache_read": "0.00000025"
+      "input": "0.00000489",
+      "output": "0.0000193",
+      "input_cache_read": "0.000000839"
      },
      "flex": {
-      "input": "0.000000625",
-      "output": "0.000005",
-      "input_cache_read": "0.0000000625"
+      "input": "0.000000649",
+      "output": "0.00000983",
+      "input_cache_read": "0.0000000763"
      }
     },
     "varies_by_provider": true,
     "fast": {
-     "input": "0.0000025",
-     "output": "0.00002",
-     "input_cache_read": "0.00000025"
+     "input": "0.00000489",
+     "output": "0.0000193",
+     "input_cache_read": "0.000000839"
     }
    }
   },
@@ -3891,10 +3891,10 @@
    ],
    "knowledge": "2024-09-30",
    "pricing": {
-    "input": "0.0000025",
-    "output": "0.00002",
-    "input_cache_read": "0.00000025",
-    "web_search": "10"
+    "input": "0.00000489",
+    "output": "0.0000193",
+    "input_cache_read": "0.000000839",
+    "web_search": "12.9"
    }
   },
   {
@@ -3957,10 +3957,10 @@
    ],
    "knowledge": "2024-09-30",
    "pricing": {
-    "input": "0.00000125",
-    "output": "0.00001",
-    "input_cache_read": "0.00000013",
-    "web_search": "14"
+    "input": "0.00000369",
+    "output": "0.0000273",
+    "input_cache_read": "0.000000443",
+    "web_search": "17.3"
    }
   },
   {
@@ -4025,27 +4025,27 @@
    ],
    "knowledge": "2024-05-31",
    "pricing": {
-    "input": "0.00000025",
-    "output": "0.000002",
-    "input_cache_read": "0.000000025",
-    "web_search": "10",
+    "input": "0.000000839",
+    "output": "0.00000719",
+    "input_cache_read": "0.0000000553",
+    "web_search": "12.9",
     "service_tiers": {
      "priority": {
-      "input": "0.00000045",
-      "output": "0.0000036",
-      "input_cache_read": "0.000000045"
+      "input": "0.000000803",
+      "output": "0.00000233",
+      "input_cache_read": "0.0000000949"
      },
      "flex": {
-      "input": "0.000000125",
-      "output": "0.000001",
-      "input_cache_read": "0.0000000125"
+      "input": "0.000000709",
+      "output": "0.00000473",
+      "input_cache_read": "0.0000000859"
      }
     },
     "varies_by_provider": true,
     "fast": {
-     "input": "0.00000045",
-     "output": "0.0000036",
-     "input_cache_read": "0.000000045"
+     "input": "0.000000803",
+     "output": "0.00000233",
+     "input_cache_read": "0.0000000949"
     }
    }
   },
@@ -4111,10 +4111,10 @@
    ],
    "knowledge": "2024-05-31",
    "pricing": {
-    "input": "0.00000045",
-    "output": "0.0000036",
-    "input_cache_read": "0.000000045",
-    "web_search": "10"
+    "input": "0.000000803",
+    "output": "0.00000233",
+    "input_cache_read": "0.0000000949",
+    "web_search": "12.9"
    }
   },
   {
@@ -4178,15 +4178,15 @@
    ],
    "knowledge": "2024-05-31",
    "pricing": {
-    "input": "0.00000005",
-    "output": "0.0000004",
-    "input_cache_read": "0.000000005",
-    "web_search": "10",
+    "input": "0.0000000583",
+    "output": "0.000000449",
+    "input_cache_read": "0.00000000469",
+    "web_search": "12.9",
     "service_tiers": {
      "flex": {
-      "input": "0.000000025",
-      "output": "0.0000002",
-      "input_cache_read": "0.0000000025"
+      "input": "0.0000000553",
+      "output": "0.000000613",
+      "input_cache_read": "0.00000000713"
      }
     },
     "varies_by_provider": true
@@ -4247,9 +4247,9 @@
    ],
    "knowledge": "2024-09-30",
    "pricing": {
-    "input": "0.000015",
-    "output": "0.00012",
-    "web_search": "10"
+    "input": "0.0000939",
+    "output": "0.000419",
+    "web_search": "12.9"
    }
   },
   {
@@ -4317,10 +4317,10 @@
    ],
    "knowledge": "2024-09-30",
    "pricing": {
-    "input": "0.00000125",
-    "output": "0.00001",
-    "input_cache_read": "0.00000013",
-    "web_search": "14"
+    "input": "0.00000369",
+    "output": "0.0000273",
+    "input_cache_read": "0.000000443",
+    "web_search": "17.3"
    }
   },
   {
@@ -4388,10 +4388,10 @@
    ],
    "knowledge": "2024-09-30",
    "pricing": {
-    "input": "0.00000125",
-    "output": "0.00001",
-    "input_cache_read": "0.000000125",
-    "web_search": "14"
+    "input": "0.00000369",
+    "output": "0.0000273",
+    "input_cache_read": "0.000000709",
+    "web_search": "17.3"
    }
   },
   {
@@ -4459,10 +4459,10 @@
    ],
    "knowledge": "2024-09-30",
    "pricing": {
-    "input": "0.00000025",
-    "output": "0.000002",
-    "input_cache_read": "0.00000003",
-    "web_search": "14"
+    "input": "0.000000839",
+    "output": "0.00000719",
+    "input_cache_read": "0.0000000163",
+    "web_search": "17.3"
    }
   },
   {
@@ -4533,27 +4533,27 @@
    ],
    "knowledge": "2024-09-30",
    "pricing": {
-    "input": "0.00000125",
-    "output": "0.00001",
-    "input_cache_read": "0.000000125",
-    "web_search": "10",
+    "input": "0.00000369",
+    "output": "0.0000273",
+    "input_cache_read": "0.000000709",
+    "web_search": "12.9",
     "service_tiers": {
      "priority": {
-      "input": "0.0000025",
-      "output": "0.00002",
-      "input_cache_read": "0.00000025"
+      "input": "0.00000489",
+      "output": "0.0000193",
+      "input_cache_read": "0.000000839"
      },
      "flex": {
-      "input": "0.000000625",
-      "output": "0.000005",
-      "input_cache_read": "0.0000000625"
+      "input": "0.000000649",
+      "output": "0.00000983",
+      "input_cache_read": "0.0000000763"
      }
     },
     "varies_by_provider": true,
     "fast": {
-     "input": "0.0000025",
-     "output": "0.00002",
-     "input_cache_read": "0.00000025"
+     "input": "0.00000489",
+     "output": "0.0000193",
+     "input_cache_read": "0.000000839"
     }
    }
   },
@@ -4625,10 +4625,10 @@
    ],
    "knowledge": "2024-09-30",
    "pricing": {
-    "input": "0.0000025",
-    "output": "0.00002",
-    "input_cache_read": "0.00000025",
-    "web_search": "10"
+    "input": "0.00000489",
+    "output": "0.0000193",
+    "input_cache_read": "0.000000839",
+    "web_search": "12.9"
    }
   },
   {
@@ -4700,27 +4700,27 @@
    ],
    "knowledge": "2025-08-31",
    "pricing": {
-    "input": "0.00000175",
-    "output": "0.000014",
-    "input_cache_read": "0.000000175",
-    "web_search": "10",
+    "input": "0.00000253",
+    "output": "0.0000483",
+    "input_cache_read": "0.000000333",
+    "web_search": "12.9",
     "service_tiers": {
      "priority": {
-      "input": "0.0000035",
-      "output": "0.000028",
-      "input_cache_read": "0.00000035"
+      "input": "0.00000919",
+      "output": "0.0000853",
+      "input_cache_read": "0.000000913"
      },
      "flex": {
-      "input": "0.000000875",
-      "output": "0.000007",
-      "input_cache_read": "0.0000000875"
+      "input": "0.000000939",
+      "output": "0.00000279",
+      "input_cache_read": "0.0000000653"
      }
     },
     "varies_by_provider": true,
     "fast": {
-     "input": "0.0000035",
-     "output": "0.000028",
-     "input_cache_read": "0.00000035"
+     "input": "0.00000919",
+     "output": "0.0000853",
+     "input_cache_read": "0.000000913"
     }
    }
   },
@@ -4793,10 +4793,10 @@
    ],
    "knowledge": "2025-08-31",
    "pricing": {
-    "input": "0.0000035",
-    "output": "0.000028",
-    "input_cache_read": "0.00000035",
-    "web_search": "10"
+    "input": "0.00000919",
+    "output": "0.0000853",
+    "input_cache_read": "0.000000913",
+    "web_search": "12.9"
    }
   },
   {
@@ -4864,10 +4864,10 @@
    ],
    "knowledge": "2025-08-31",
    "pricing": {
-    "input": "0.00000175",
-    "output": "0.000014",
-    "input_cache_read": "0.000000175",
-    "web_search": "14"
+    "input": "0.00000253",
+    "output": "0.0000483",
+    "input_cache_read": "0.000000333",
+    "web_search": "17.3"
    }
   },
   {
@@ -4930,9 +4930,9 @@
    ],
    "knowledge": "2025-08-31",
    "pricing": {
-    "input": "0.000021",
-    "output": "0.000168",
-    "web_search": "10"
+    "input": "0.0000523",
+    "output": "0.000613",
+    "web_search": "12.9"
    }
   },
   {
@@ -5004,21 +5004,21 @@
    ],
    "knowledge": "2025-08-31",
    "pricing": {
-    "input": "0.00000175",
-    "output": "0.000014",
-    "input_cache_read": "0.000000175",
-    "web_search": "10",
+    "input": "0.00000253",
+    "output": "0.0000483",
+    "input_cache_read": "0.000000333",
+    "web_search": "12.9",
     "service_tiers": {
      "priority": {
-      "input": "0.0000035",
-      "output": "0.000028",
-      "input_cache_read": "0.00000035"
+      "input": "0.00000919",
+      "output": "0.0000853",
+      "input_cache_read": "0.000000913"
      }
     },
     "fast": {
-     "input": "0.0000035",
-     "output": "0.000028",
-     "input_cache_read": "0.00000035"
+     "input": "0.00000919",
+     "output": "0.0000853",
+     "input_cache_read": "0.000000913"
     }
    }
   },
@@ -5091,10 +5091,10 @@
    ],
    "knowledge": "2025-08-31",
    "pricing": {
-    "input": "0.0000035",
-    "output": "0.000028",
-    "input_cache_read": "0.00000035",
-    "web_search": "10"
+    "input": "0.00000919",
+    "output": "0.0000853",
+    "input_cache_read": "0.000000913",
+    "web_search": "12.9"
    }
   },
   {
@@ -5169,108 +5169,108 @@
    ],
    "knowledge": "2025-08-31",
    "pricing": {
-    "input": "0.0000025",
+    "input": "0.00000489",
     "input_tiers": [
      {
-      "cost": "0.0000025",
+      "cost": "0.00000489",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.000005",
+      "cost": "0.00000983",
       "min": 272000
      }
     ],
-    "output": "0.000015",
+    "output": "0.0000939",
     "output_tiers": [
      {
-      "cost": "0.000015",
+      "cost": "0.0000939",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.0000225",
+      "cost": "0.0000973",
       "min": 272000
      }
     ],
-    "input_cache_read": "0.00000025",
+    "input_cache_read": "0.000000839",
     "input_cache_read_tiers": [
      {
-      "cost": "0.00000025",
+      "cost": "0.000000839",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.0000005",
+      "cost": "0.000000543",
       "min": 272000
      }
     ],
-    "web_search": "10",
+    "web_search": "12.9",
     "service_tiers": {
      "priority": {
-      "input": "0.000005",
-      "output": "0.00003",
-      "input_cache_read": "0.0000005"
+      "input": "0.00000983",
+      "output": "0.0000239",
+      "input_cache_read": "0.000000543"
      },
      "flex": {
-      "input": "0.00000125",
-      "output": "0.0000075",
-      "input_cache_read": "0.00000013",
+      "input": "0.00000369",
+      "output": "0.00000869",
+      "input_cache_read": "0.000000443",
       "long_context": {
        "threshold": 272000,
-       "input": "0.0000025",
-       "output": "0.00001125",
-       "input_cache_read": "0.00000025"
+       "input": "0.00000489",
+       "output": "0.0000143",
+       "input_cache_read": "0.000000839"
       }
      }
     },
     "fast": {
-     "input": "0.000005",
-     "output": "0.00003",
-     "input_cache_read": "0.0000005"
+     "input": "0.00000983",
+     "output": "0.0000239",
+     "input_cache_read": "0.000000543"
     },
     "regional": {
      "us": {
-      "input": "0.00000275",
+      "input": "0.00000579",
       "input_tiers": [
        {
-        "cost": "0.00000275",
+        "cost": "0.00000579",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000055",
+        "cost": "0.00000623",
         "min": 272000
        }
       ],
-      "output": "0.0000165",
+      "output": "0.0000313",
       "output_tiers": [
        {
-        "cost": "0.0000165",
+        "cost": "0.0000313",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00002475",
+        "cost": "0.0000743",
         "min": 272000
        }
       ],
-      "input_cache_read": "0.000000275",
+      "input_cache_read": "0.000000599",
       "input_cache_read_tiers": [
        {
-        "cost": "0.000000275",
+        "cost": "0.000000599",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000055",
+        "cost": "0.000000959",
         "min": 272000
        }
       ],
       "fast": {
-       "input": "0.0000055",
-       "output": "0.000033",
-       "input_cache_read": "0.00000055"
+       "input": "0.00000623",
+       "output": "0.0000179",
+       "input_cache_read": "0.000000959"
       }
      }
     }
@@ -5348,15 +5348,15 @@
    ],
    "knowledge": "2025-08-31",
    "pricing": {
-    "input": "0.000005",
-    "output": "0.00003",
-    "input_cache_read": "0.0000005",
-    "web_search": "10",
+    "input": "0.00000983",
+    "output": "0.0000239",
+    "input_cache_read": "0.000000543",
+    "web_search": "12.9",
     "regional": {
      "us": {
-      "input": "0.0000055",
-      "output": "0.000033",
-      "input_cache_read": "0.00000055"
+      "input": "0.00000623",
+      "output": "0.0000179",
+      "input_cache_read": "0.000000959"
      }
     }
    }
@@ -5433,36 +5433,36 @@
    ],
    "knowledge": "2025-08-31",
    "pricing": {
-    "input": "0.00000075",
-    "output": "0.0000045",
-    "input_cache_read": "0.000000075",
-    "web_search": "10",
+    "input": "0.000000573",
+    "output": "0.00000699",
+    "input_cache_read": "0.0000000409",
+    "web_search": "12.9",
     "service_tiers": {
      "priority": {
-      "input": "0.0000015",
-      "output": "0.000009",
-      "input_cache_read": "0.00000015"
+      "input": "0.00000739",
+      "output": "0.00000439",
+      "input_cache_read": "0.000000193"
      },
      "flex": {
-      "input": "0.000000375",
-      "output": "0.00000225",
-      "input_cache_read": "0.0000000375"
+      "input": "0.000000683",
+      "output": "0.00000203",
+      "input_cache_read": "0.0000000423"
      }
     },
     "fast": {
-     "input": "0.0000015",
-     "output": "0.000009",
-     "input_cache_read": "0.00000015"
+     "input": "0.00000739",
+     "output": "0.00000439",
+     "input_cache_read": "0.000000193"
     },
     "regional": {
      "us": {
-      "input": "0.000000825",
-      "output": "0.00000495",
-      "input_cache_read": "0.0000000825",
+      "input": "0.000000383",
+      "output": "0.00000453",
+      "input_cache_read": "0.0000000829",
       "fast": {
-       "input": "0.00000165",
-       "output": "0.0000099",
-       "input_cache_read": "0.000000165"
+       "input": "0.00000979",
+       "output": "0.00000613",
+       "input_cache_read": "0.000000769"
       }
      }
     }
@@ -5540,15 +5540,15 @@
    ],
    "knowledge": "2025-08-31",
    "pricing": {
-    "input": "0.0000015",
-    "output": "0.000009",
-    "input_cache_read": "0.00000015",
-    "web_search": "10",
+    "input": "0.00000739",
+    "output": "0.00000439",
+    "input_cache_read": "0.000000193",
+    "web_search": "12.9",
     "regional": {
      "us": {
-      "input": "0.00000165",
-      "output": "0.0000099",
-      "input_cache_read": "0.000000165"
+      "input": "0.00000979",
+      "output": "0.00000613",
+      "input_cache_read": "0.000000769"
      }
     }
    }
@@ -5624,22 +5624,22 @@
    ],
    "knowledge": "2025-08-31",
    "pricing": {
-    "input": "0.0000002",
-    "output": "0.00000125",
-    "input_cache_read": "0.00000002",
-    "web_search": "10",
+    "input": "0.000000613",
+    "output": "0.00000369",
+    "input_cache_read": "0.0000000973",
+    "web_search": "12.9",
     "service_tiers": {
      "flex": {
-      "input": "0.0000001",
-      "output": "0.000000625",
-      "input_cache_read": "0.00000001"
+      "input": "0.000000293",
+      "output": "0.000000649",
+      "input_cache_read": "0.0000000283"
      }
     },
     "regional": {
      "us": {
-      "input": "0.00000022",
-      "output": "0.000001375",
-      "input_cache_read": "0.000000022"
+      "input": "0.000000249",
+      "output": "0.00000593",
+      "input_cache_read": "0.0000000209"
      }
     }
    }
@@ -5713,65 +5713,65 @@
    ],
    "knowledge": "2025-08-31",
    "pricing": {
-    "input": "0.00003",
+    "input": "0.0000239",
     "input_tiers": [
      {
-      "cost": "0.00003",
+      "cost": "0.0000239",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.00006",
+      "cost": "0.000213",
       "min": 272000
      }
     ],
-    "output": "0.00018",
+    "output": "0.000389",
     "output_tiers": [
      {
-      "cost": "0.00018",
+      "cost": "0.000389",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.00027",
+      "cost": "0.000713",
       "min": 272000
      }
     ],
-    "web_search": "10",
+    "web_search": "12.9",
     "service_tiers": {
      "flex": {
-      "input": "0.000015",
-      "output": "0.00009",
+      "input": "0.0000939",
+      "output": "0.000119",
       "long_context": {
        "threshold": 272000,
-       "input": "0.00003",
-       "output": "0.000135"
+       "input": "0.0000239",
+       "output": "0.000189"
       }
      }
     },
     "regional": {
      "us": {
-      "input": "0.000033",
+      "input": "0.0000179",
       "input_tiers": [
        {
-        "cost": "0.000033",
+        "cost": "0.0000179",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000066",
+        "cost": "0.0000439",
         "min": 272000
        }
       ],
-      "output": "0.000198",
+      "output": "0.000143",
       "output_tiers": [
        {
-        "cost": "0.000198",
+        "cost": "0.000143",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000297",
+        "cost": "0.000469",
         "min": 272000
        }
       ]
@@ -5851,109 +5851,109 @@
    ],
    "knowledge": "2025-12-01",
    "pricing": {
-    "input": "0.000005",
+    "input": "0.00000983",
     "input_tiers": [
      {
-      "cost": "0.000005",
+      "cost": "0.00000983",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.00001",
+      "cost": "0.0000273",
       "min": 272000
      }
     ],
-    "output": "0.00003",
+    "output": "0.0000239",
     "output_tiers": [
      {
-      "cost": "0.00003",
+      "cost": "0.0000239",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.000045",
+      "cost": "0.000153",
       "min": 272000
      }
     ],
-    "input_cache_read": "0.0000005",
+    "input_cache_read": "0.000000543",
     "input_cache_read_tiers": [
      {
-      "cost": "0.0000005",
+      "cost": "0.000000543",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.000001",
+      "cost": "0.00000473",
       "min": 272000
      }
     ],
-    "web_search": "10",
+    "web_search": "12.9",
     "service_tiers": {
      "priority": {
-      "input": "0.0000125",
-      "output": "0.000075",
-      "input_cache_read": "0.00000125"
+      "input": "0.0000349",
+      "output": "0.000179",
+      "input_cache_read": "0.00000369"
      },
      "flex": {
-      "input": "0.0000025",
-      "output": "0.000015",
-      "input_cache_read": "0.00000025",
+      "input": "0.00000489",
+      "output": "0.0000939",
+      "input_cache_read": "0.000000839",
       "long_context": {
        "threshold": 272000,
-       "input": "0.000005",
-       "output": "0.0000225",
-       "input_cache_read": "0.0000005"
+       "input": "0.00000983",
+       "output": "0.0000973",
+       "input_cache_read": "0.000000543"
       }
      }
     },
     "varies_by_provider": true,
     "fast": {
-     "input": "0.0000125",
-     "output": "0.000075",
-     "input_cache_read": "0.00000125"
+     "input": "0.0000349",
+     "output": "0.000179",
+     "input_cache_read": "0.00000369"
     },
     "regional": {
      "us": {
-      "input": "0.0000055",
+      "input": "0.00000623",
       "input_tiers": [
        {
-        "cost": "0.0000055",
+        "cost": "0.00000623",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000011",
+        "cost": "0.0000619",
         "min": 272000
        }
       ],
-      "output": "0.000033",
+      "output": "0.0000179",
       "output_tiers": [
        {
-        "cost": "0.000033",
+        "cost": "0.0000179",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000495",
+        "cost": "0.0000263",
         "min": 272000
        }
       ],
-      "input_cache_read": "0.00000055",
+      "input_cache_read": "0.000000959",
       "input_cache_read_tiers": [
        {
-        "cost": "0.00000055",
+        "cost": "0.000000959",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000011",
+        "cost": "0.00000219",
         "min": 272000
        }
       ],
       "fast": {
-       "input": "0.00001375",
-       "output": "0.0000825",
-       "input_cache_read": "0.000001375"
+       "input": "0.0000229",
+       "output": "0.000233",
+       "input_cache_read": "0.00000593"
       }
      }
     }
@@ -6030,15 +6030,15 @@
    ],
    "knowledge": "2025-12-01",
    "pricing": {
-    "input": "0.0000125",
-    "output": "0.000075",
-    "input_cache_read": "0.00000125",
-    "web_search": "10",
+    "input": "0.0000349",
+    "output": "0.000179",
+    "input_cache_read": "0.00000369",
+    "web_search": "12.9",
     "regional": {
      "us": {
-      "input": "0.00001375",
-      "output": "0.0000825",
-      "input_cache_read": "0.000001375"
+      "input": "0.0000229",
+      "output": "0.000233",
+      "input_cache_read": "0.00000593"
      }
     }
    }
@@ -6107,60 +6107,60 @@
    ],
    "knowledge": "2025-12-01",
    "pricing": {
-    "input": "0.00003",
+    "input": "0.0000239",
     "input_tiers": [
      {
-      "cost": "0.00003",
+      "cost": "0.0000239",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.00006",
+      "cost": "0.000213",
       "min": 272000
      }
     ],
-    "output": "0.00018",
+    "output": "0.000389",
     "output_tiers": [
      {
-      "cost": "0.00018",
+      "cost": "0.000389",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.00027",
+      "cost": "0.000713",
       "min": 272000
      }
     ],
-    "web_search": "14",
+    "web_search": "17.3",
     "service_tiers": {
      "flex": {
-      "input": "0.000015",
-      "output": "0.00009"
+      "input": "0.0000939",
+      "output": "0.000119"
      }
     },
     "regional": {
      "us": {
-      "input": "0.000033",
+      "input": "0.0000179",
       "input_tiers": [
        {
-        "cost": "0.000033",
+        "cost": "0.0000179",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000066",
+        "cost": "0.0000439",
         "min": 272000
        }
       ],
-      "output": "0.000198",
+      "output": "0.000143",
       "output_tiers": [
        {
-        "cost": "0.000198",
+        "cost": "0.000143",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000297",
+        "cost": "0.000469",
         "min": 272000
        }
       ]
@@ -6242,272 +6242,272 @@
    ],
    "knowledge": "2026-02-16",
    "pricing": {
-    "input": "0.0000002",
+    "input": "0.000000613",
     "input_tiers": [
      {
-      "cost": "0.0000002",
+      "cost": "0.000000613",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.0000004",
+      "cost": "0.000000449",
       "min": 272000
      }
     ],
-    "output": "0.0000012",
+    "output": "0.00000853",
     "output_tiers": [
      {
-      "cost": "0.0000012",
+      "cost": "0.00000853",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.0000018",
+      "cost": "0.00000163",
       "min": 272000
      }
     ],
-    "input_cache_read": "0.00000002",
+    "input_cache_read": "0.0000000973",
     "input_cache_read_tiers": [
      {
-      "cost": "0.00000002",
+      "cost": "0.0000000973",
       "max": 272000
      },
      {
-      "cost": "0.00000004",
+      "cost": "0.0000000679",
       "min": 272000
      }
     ],
-    "input_cache_write": "0.00000025",
+    "input_cache_write": "0.000000839",
     "input_cache_write_tiers": [
      {
-      "cost": "0.00000025",
+      "cost": "0.000000839",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.0000005",
+      "cost": "0.000000543",
       "min": 272000
      }
     ],
-    "web_search": "10",
+    "web_search": "12.9",
     "service_tiers": {
      "flex": {
-      "input": "0.0000001",
-      "output": "0.0000006",
-      "input_cache_read": "0.00000001",
+      "input": "0.000000293",
+      "output": "0.000000233",
+      "input_cache_read": "0.0000000283",
       "long_context": {
        "threshold": 272000,
-       "input": "0.0000002",
-       "output": "0.0000009",
-       "input_cache_read": "0.00000002"
+       "input": "0.000000613",
+       "output": "0.000000189",
+       "input_cache_read": "0.0000000973"
       }
      },
      "priority": {
-      "input": "0.0000004",
-      "output": "0.0000024",
-      "input_cache_read": "0.00000004",
+      "input": "0.000000449",
+      "output": "0.00000669",
+      "input_cache_read": "0.0000000679",
       "long_context": {
        "threshold": 272000,
-       "input": "0.0000008",
-       "output": "0.0000036",
-       "input_cache_read": "0.00000008"
+       "input": "0.000000729",
+       "output": "0.00000233",
+       "input_cache_read": "0.0000000133"
       }
      }
     },
     "fast": {
-     "input": "0.0000004",
+     "input": "0.000000449",
      "input_tiers": [
       {
-       "cost": "0.0000004",
+       "cost": "0.000000449",
        "min": 0,
        "max": 272000
       },
       {
-       "cost": "0.0000008",
+       "cost": "0.000000729",
        "min": 272000
       }
      ],
-     "output": "0.0000024",
+     "output": "0.00000669",
      "output_tiers": [
       {
-       "cost": "0.0000024",
+       "cost": "0.00000669",
        "min": 0,
        "max": 272000
       },
       {
-       "cost": "0.0000036",
+       "cost": "0.00000233",
        "min": 272000
       }
      ],
-     "input_cache_read": "0.00000004",
+     "input_cache_read": "0.0000000679",
      "input_cache_read_tiers": [
       {
-       "cost": "0.00000004",
+       "cost": "0.0000000679",
        "min": 0,
        "max": 272000
       },
       {
-       "cost": "0.00000008",
+       "cost": "0.0000000133",
        "min": 272000
       }
      ],
-     "input_cache_write": "0.0000005",
+     "input_cache_write": "0.000000543",
      "input_cache_write_tiers": [
       {
-       "cost": "0.0000005",
+       "cost": "0.000000543",
        "min": 0,
        "max": 272000
       },
       {
-       "cost": "0.000001",
+       "cost": "0.00000473",
        "min": 272000
       }
      ]
     },
     "regional": {
      "eu": {
-      "input": "0.00000022",
+      "input": "0.000000249",
       "input_tiers": [
        {
-        "cost": "0.00000022",
+        "cost": "0.000000249",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000044",
+        "cost": "0.000000179",
         "min": 272000
        }
       ],
-      "output": "0.00000132",
+      "output": "0.00000643",
       "output_tiers": [
        {
-        "cost": "0.00000132",
+        "cost": "0.00000643",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000198",
+        "cost": "0.00000533",
         "min": 272000
        }
       ],
-      "input_cache_read": "0.000000022",
+      "input_cache_read": "0.0000000209",
       "input_cache_read_tiers": [
        {
-        "cost": "0.000000022",
+        "cost": "0.0000000209",
         "max": 272000
        },
        {
-        "cost": "0.000000044",
+        "cost": "0.0000000313",
         "min": 272000
        }
       ],
-      "input_cache_write": "0.000000275",
+      "input_cache_write": "0.000000599",
       "input_cache_write_tiers": [
        {
-        "cost": "0.000000275",
+        "cost": "0.000000599",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000055",
+        "cost": "0.000000959",
         "min": 272000
        }
       ]
      },
      "us": {
-      "input": "0.00000022",
+      "input": "0.000000249",
       "input_tiers": [
        {
-        "cost": "0.00000022",
+        "cost": "0.000000249",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000044",
+        "cost": "0.000000179",
         "min": 272000
        }
       ],
-      "output": "0.00000132",
+      "output": "0.00000643",
       "output_tiers": [
        {
-        "cost": "0.00000132",
+        "cost": "0.00000643",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000198",
+        "cost": "0.00000533",
         "min": 272000
        }
       ],
-      "input_cache_read": "0.000000022",
+      "input_cache_read": "0.0000000209",
       "input_cache_read_tiers": [
        {
-        "cost": "0.000000022",
+        "cost": "0.0000000209",
         "max": 272000
        },
        {
-        "cost": "0.000000044",
+        "cost": "0.0000000313",
         "min": 272000
        }
       ],
-      "input_cache_write": "0.000000275",
+      "input_cache_write": "0.000000599",
       "input_cache_write_tiers": [
        {
-        "cost": "0.000000275",
+        "cost": "0.000000599",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000055",
+        "cost": "0.000000959",
         "min": 272000
        }
       ],
       "fast": {
-       "input": "0.00000044",
+       "input": "0.000000179",
        "input_tiers": [
         {
-         "cost": "0.00000044",
+         "cost": "0.000000179",
          "min": 0,
          "max": 272000
         },
         {
-         "cost": "0.00000088",
+         "cost": "0.000000263",
          "min": 272000
         }
        ],
-       "output": "0.00000264",
+       "output": "0.00000823",
        "output_tiers": [
         {
-         "cost": "0.00000264",
+         "cost": "0.00000823",
          "min": 0,
          "max": 272000
         },
         {
-         "cost": "0.00000396",
+         "cost": "0.00000173",
          "min": 272000
         }
        ],
-       "input_cache_read": "0.000000044",
+       "input_cache_read": "0.0000000313",
        "input_cache_read_tiers": [
         {
-         "cost": "0.000000044",
+         "cost": "0.0000000313",
          "min": 0,
          "max": 272000
         },
         {
-         "cost": "0.000000088",
+         "cost": "0.0000000379",
          "min": 272000
         }
        ],
-       "input_cache_write": "0.00000055",
+       "input_cache_write": "0.000000959",
        "input_cache_write_tiers": [
         {
-         "cost": "0.00000055",
+         "cost": "0.000000959",
          "min": 0,
          "max": 272000
         },
         {
-         "cost": "0.0000011",
+         "cost": "0.00000219",
          "min": 272000
         }
        ]
@@ -6589,152 +6589,152 @@
    ],
    "knowledge": "2026-02-16",
    "pricing": {
-    "input": "0.0000004",
+    "input": "0.000000449",
     "input_tiers": [
      {
-      "cost": "0.0000004",
+      "cost": "0.000000449",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.0000008",
+      "cost": "0.000000729",
       "min": 272000
      }
     ],
-    "output": "0.0000024",
+    "output": "0.00000669",
     "output_tiers": [
      {
-      "cost": "0.0000024",
+      "cost": "0.00000669",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.0000036",
+      "cost": "0.00000233",
       "min": 272000
      }
     ],
-    "input_cache_read": "0.00000004",
+    "input_cache_read": "0.0000000679",
     "input_cache_read_tiers": [
      {
-      "cost": "0.00000004",
+      "cost": "0.0000000679",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.00000008",
+      "cost": "0.0000000133",
       "min": 272000
      }
     ],
-    "input_cache_write": "0.0000005",
+    "input_cache_write": "0.000000543",
     "input_cache_write_tiers": [
      {
-      "cost": "0.0000005",
+      "cost": "0.000000543",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.000001",
+      "cost": "0.00000473",
       "min": 272000
      }
     ],
-    "web_search": "10",
+    "web_search": "12.9",
     "regional": {
      "eu": {
-      "input": "0.0000004",
+      "input": "0.000000449",
       "input_tiers": [
        {
-        "cost": "0.0000004",
+        "cost": "0.000000449",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000008",
+        "cost": "0.000000729",
         "min": 272000
        }
       ],
-      "output": "0.0000024",
+      "output": "0.00000669",
       "output_tiers": [
        {
-        "cost": "0.0000024",
+        "cost": "0.00000669",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000036",
+        "cost": "0.00000233",
         "min": 272000
        }
       ],
-      "input_cache_read": "0.00000004",
+      "input_cache_read": "0.0000000679",
       "input_cache_read_tiers": [
        {
-        "cost": "0.00000004",
+        "cost": "0.0000000679",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000008",
+        "cost": "0.0000000133",
         "min": 272000
        }
       ],
-      "input_cache_write": "0.0000005",
+      "input_cache_write": "0.000000543",
       "input_cache_write_tiers": [
        {
-        "cost": "0.0000005",
+        "cost": "0.000000543",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000001",
+        "cost": "0.00000473",
         "min": 272000
        }
       ]
      },
      "us": {
-      "input": "0.00000044",
+      "input": "0.000000179",
       "input_tiers": [
        {
-        "cost": "0.00000044",
+        "cost": "0.000000179",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000088",
+        "cost": "0.000000263",
         "min": 272000
        }
       ],
-      "output": "0.00000264",
+      "output": "0.00000823",
       "output_tiers": [
        {
-        "cost": "0.00000264",
+        "cost": "0.00000823",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000396",
+        "cost": "0.00000173",
         "min": 272000
        }
       ],
-      "input_cache_read": "0.000000044",
+      "input_cache_read": "0.0000000313",
       "input_cache_read_tiers": [
        {
-        "cost": "0.000000044",
+        "cost": "0.0000000313",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000000088",
+        "cost": "0.0000000379",
         "min": 272000
        }
       ],
-      "input_cache_write": "0.00000055",
+      "input_cache_write": "0.000000959",
       "input_cache_write_tiers": [
        {
-        "cost": "0.00000055",
+        "cost": "0.000000959",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000011",
+        "cost": "0.00000219",
         "min": 272000
        }
       ]
@@ -6817,276 +6817,276 @@
    ],
    "knowledge": "2026-02-16",
    "pricing": {
-    "input": "0.000004",
+    "input": "0.00000843",
     "input_tiers": [
      {
-      "cost": "0.000004",
+      "cost": "0.00000843",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.000008",
+      "cost": "0.00000323",
       "min": 272000
      }
     ],
-    "output": "0.00002",
+    "output": "0.0000193",
     "output_tiers": [
      {
-      "cost": "0.00002",
+      "cost": "0.0000193",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.00003",
+      "cost": "0.0000239",
       "min": 272000
      }
     ],
-    "input_cache_read": "0.0000004",
+    "input_cache_read": "0.000000449",
     "input_cache_read_tiers": [
      {
-      "cost": "0.0000004",
+      "cost": "0.000000449",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.0000008",
+      "cost": "0.000000729",
       "min": 272000
      }
     ],
-    "input_cache_write": "0.000005",
+    "input_cache_write": "0.00000983",
     "input_cache_write_tiers": [
      {
-      "cost": "0.000005",
+      "cost": "0.00000983",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.00001",
+      "cost": "0.0000273",
       "min": 272000
      }
     ],
-    "web_search": "10",
+    "web_search": "12.9",
     "service_tiers": {
      "flex": {
-      "input": "0.000002",
-      "output": "0.00001",
-      "input_cache_read": "0.0000002",
+      "input": "0.00000719",
+      "output": "0.0000273",
+      "input_cache_read": "0.000000613",
       "long_context": {
        "threshold": 272000,
-       "input": "0.000004",
-       "output": "0.000015",
-       "input_cache_read": "0.0000004"
+       "input": "0.00000843",
+       "output": "0.0000939",
+       "input_cache_read": "0.000000449"
       }
      },
      "priority": {
-      "input": "0.000008",
-      "output": "0.00004",
-      "input_cache_read": "0.0000008",
+      "input": "0.00000323",
+      "output": "0.000129",
+      "input_cache_read": "0.000000729",
       "long_context": {
        "threshold": 272000,
-       "input": "0.000016",
-       "output": "0.00006",
-       "input_cache_read": "0.0000016"
+       "input": "0.0000163",
+       "output": "0.000213",
+       "input_cache_read": "0.00000313"
       }
      }
     },
     "varies_by_provider": true,
     "fast": {
-     "input": "0.000008",
+     "input": "0.00000323",
      "input_tiers": [
       {
-       "cost": "0.000008",
+       "cost": "0.00000323",
        "min": 0,
        "max": 272000
       },
       {
-       "cost": "0.000016",
+       "cost": "0.0000163",
        "min": 272000
       }
      ],
-     "output": "0.00004",
+     "output": "0.000129",
      "output_tiers": [
       {
-       "cost": "0.00004",
+       "cost": "0.000129",
        "min": 0,
        "max": 272000
       },
       {
-       "cost": "0.00006",
+       "cost": "0.000213",
        "min": 272000
       }
      ],
-     "input_cache_read": "0.0000008",
+     "input_cache_read": "0.000000729",
      "input_cache_read_tiers": [
       {
-       "cost": "0.0000008",
+       "cost": "0.000000729",
        "min": 0,
        "max": 272000
       },
       {
-       "cost": "0.0000016",
+       "cost": "0.00000313",
        "min": 272000
       }
      ],
-     "input_cache_write": "0.00001",
+     "input_cache_write": "0.0000273",
      "input_cache_write_tiers": [
       {
-       "cost": "0.00001",
+       "cost": "0.0000273",
        "min": 0,
        "max": 272000
       },
       {
-       "cost": "0.00002",
+       "cost": "0.0000193",
        "min": 272000
       }
      ]
     },
     "regional": {
      "eu": {
-      "input": "0.0000044",
+      "input": "0.00000119",
       "input_tiers": [
        {
-        "cost": "0.0000044",
+        "cost": "0.00000119",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000088",
+        "cost": "0.00000753",
         "min": 272000
        }
       ],
-      "output": "0.000022",
+      "output": "0.0000369",
       "output_tiers": [
        {
-        "cost": "0.000022",
+        "cost": "0.0000369",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000033",
+        "cost": "0.0000179",
         "min": 272000
        }
       ],
-      "input_cache_read": "0.00000044",
+      "input_cache_read": "0.000000179",
       "input_cache_read_tiers": [
        {
-        "cost": "0.00000044",
+        "cost": "0.000000179",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000088",
+        "cost": "0.000000263",
         "min": 272000
        }
       ],
-      "input_cache_write": "0.0000055",
+      "input_cache_write": "0.00000623",
       "input_cache_write_tiers": [
        {
-        "cost": "0.0000055",
+        "cost": "0.00000623",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000011",
+        "cost": "0.0000619",
         "min": 272000
        }
       ]
      },
      "us": {
-      "input": "0.0000044",
+      "input": "0.00000119",
       "input_tiers": [
        {
-        "cost": "0.0000044",
+        "cost": "0.00000119",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000088",
+        "cost": "0.00000753",
         "min": 272000
        }
       ],
-      "output": "0.000022",
+      "output": "0.0000369",
       "output_tiers": [
        {
-        "cost": "0.000022",
+        "cost": "0.0000369",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000033",
+        "cost": "0.0000179",
         "min": 272000
        }
       ],
-      "input_cache_read": "0.00000044",
+      "input_cache_read": "0.000000179",
       "input_cache_read_tiers": [
        {
-        "cost": "0.00000044",
+        "cost": "0.000000179",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000088",
+        "cost": "0.000000263",
         "min": 272000
        }
       ],
-      "input_cache_write": "0.0000055",
+      "input_cache_write": "0.00000623",
       "input_cache_write_tiers": [
        {
-        "cost": "0.0000055",
+        "cost": "0.00000623",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000011",
+        "cost": "0.0000619",
         "min": 272000
        }
       ],
       "fast": {
-       "input": "0.0000088",
+       "input": "0.00000753",
        "input_tiers": [
         {
-         "cost": "0.0000088",
+         "cost": "0.00000753",
          "min": 0,
          "max": 272000
         },
         {
-         "cost": "0.0000176",
+         "cost": "0.0000419",
          "min": 272000
         }
        ],
-       "output": "0.000044",
+       "output": "0.0000699",
        "output_tiers": [
         {
-         "cost": "0.000044",
+         "cost": "0.0000699",
          "min": 0,
          "max": 272000
         },
         {
-         "cost": "0.000066",
+         "cost": "0.0000439",
          "min": 272000
         }
        ],
-       "input_cache_read": "0.00000088",
+       "input_cache_read": "0.000000263",
        "input_cache_read_tiers": [
         {
-         "cost": "0.00000088",
+         "cost": "0.000000263",
          "min": 0,
          "max": 272000
         },
         {
-         "cost": "0.00000176",
+         "cost": "0.00000419",
          "min": 272000
         }
        ],
-       "input_cache_write": "0.000011",
+       "input_cache_write": "0.0000619",
        "input_cache_write_tiers": [
         {
-         "cost": "0.000011",
+         "cost": "0.0000619",
          "min": 0,
          "max": 272000
         },
         {
-         "cost": "0.000022",
+         "cost": "0.0000369",
          "min": 272000
         }
        ]
@@ -7169,152 +7169,152 @@
    ],
    "knowledge": "2026-02-16",
    "pricing": {
-    "input": "0.000008",
+    "input": "0.00000323",
     "input_tiers": [
      {
-      "cost": "0.000008",
+      "cost": "0.00000323",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.000016",
+      "cost": "0.0000163",
       "min": 272000
      }
     ],
-    "output": "0.00004",
+    "output": "0.000129",
     "output_tiers": [
      {
-      "cost": "0.00004",
+      "cost": "0.000129",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.00006",
+      "cost": "0.000213",
       "min": 272000
      }
     ],
-    "input_cache_read": "0.0000008",
+    "input_cache_read": "0.000000729",
     "input_cache_read_tiers": [
      {
-      "cost": "0.0000008",
+      "cost": "0.000000729",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.0000016",
+      "cost": "0.00000313",
       "min": 272000
      }
     ],
-    "input_cache_write": "0.00001",
+    "input_cache_write": "0.0000273",
     "input_cache_write_tiers": [
      {
-      "cost": "0.00001",
+      "cost": "0.0000273",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.00002",
+      "cost": "0.0000193",
       "min": 272000
      }
     ],
-    "web_search": "10",
+    "web_search": "12.9",
     "regional": {
      "eu": {
-      "input": "0.000008",
+      "input": "0.00000323",
       "input_tiers": [
        {
-        "cost": "0.000008",
+        "cost": "0.00000323",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000016",
+        "cost": "0.0000163",
         "min": 272000
        }
       ],
-      "output": "0.00004",
+      "output": "0.000129",
       "output_tiers": [
        {
-        "cost": "0.00004",
+        "cost": "0.000129",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00006",
+        "cost": "0.000213",
         "min": 272000
        }
       ],
-      "input_cache_read": "0.0000008",
+      "input_cache_read": "0.000000729",
       "input_cache_read_tiers": [
        {
-        "cost": "0.0000008",
+        "cost": "0.000000729",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000016",
+        "cost": "0.00000313",
         "min": 272000
        }
       ],
-      "input_cache_write": "0.00001",
+      "input_cache_write": "0.0000273",
       "input_cache_write_tiers": [
        {
-        "cost": "0.00001",
+        "cost": "0.0000273",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00002",
+        "cost": "0.0000193",
         "min": 272000
        }
       ]
      },
      "us": {
-      "input": "0.0000088",
+      "input": "0.00000753",
       "input_tiers": [
        {
-        "cost": "0.0000088",
+        "cost": "0.00000753",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000176",
+        "cost": "0.0000419",
         "min": 272000
        }
       ],
-      "output": "0.000044",
+      "output": "0.0000699",
       "output_tiers": [
        {
-        "cost": "0.000044",
+        "cost": "0.0000699",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000066",
+        "cost": "0.0000439",
         "min": 272000
        }
       ],
-      "input_cache_read": "0.00000088",
+      "input_cache_read": "0.000000263",
       "input_cache_read_tiers": [
        {
-        "cost": "0.00000088",
+        "cost": "0.000000263",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000176",
+        "cost": "0.00000419",
         "min": 272000
        }
       ],
-      "input_cache_write": "0.000011",
+      "input_cache_write": "0.0000619",
       "input_cache_write_tiers": [
        {
-        "cost": "0.000011",
+        "cost": "0.0000619",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000022",
+        "cost": "0.0000369",
         "min": 272000
        }
       ]
@@ -7397,275 +7397,275 @@
    ],
    "knowledge": "2026-02-16",
    "pricing": {
-    "input": "0.000002",
+    "input": "0.00000719",
     "input_tiers": [
      {
-      "cost": "0.000002",
+      "cost": "0.00000719",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.000004",
+      "cost": "0.00000843",
       "min": 272000
      }
     ],
-    "output": "0.000012",
+    "output": "0.0000859",
     "output_tiers": [
      {
-      "cost": "0.000012",
+      "cost": "0.0000859",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.000018",
+      "cost": "0.0000883",
       "min": 272000
      }
     ],
-    "input_cache_read": "0.0000002",
+    "input_cache_read": "0.000000613",
     "input_cache_read_tiers": [
      {
-      "cost": "0.0000002",
+      "cost": "0.000000613",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.0000004",
+      "cost": "0.000000449",
       "min": 272000
      }
     ],
-    "input_cache_write": "0.0000025",
+    "input_cache_write": "0.00000489",
     "input_cache_write_tiers": [
      {
-      "cost": "0.0000025",
+      "cost": "0.00000489",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.000005",
+      "cost": "0.00000983",
       "min": 272000
      }
     ],
-    "web_search": "10",
+    "web_search": "12.9",
     "service_tiers": {
      "flex": {
-      "input": "0.000001",
-      "output": "0.000006",
-      "input_cache_read": "0.0000001",
+      "input": "0.00000473",
+      "output": "0.00000359",
+      "input_cache_read": "0.000000293",
       "long_context": {
        "threshold": 272000,
-       "input": "0.000002",
-       "output": "0.000009",
-       "input_cache_read": "0.0000002"
+       "input": "0.00000719",
+       "output": "0.00000439",
+       "input_cache_read": "0.000000613"
       }
      },
      "priority": {
-      "input": "0.000004",
-      "output": "0.000024",
-      "input_cache_read": "0.0000004",
+      "input": "0.00000843",
+      "output": "0.0000289",
+      "input_cache_read": "0.000000449",
       "long_context": {
        "threshold": 272000,
-       "input": "0.000008",
-       "output": "0.000036",
-       "input_cache_read": "0.0000008"
+       "input": "0.00000323",
+       "output": "0.0000623",
+       "input_cache_read": "0.000000729"
       }
      }
     },
     "fast": {
-     "input": "0.000004",
+     "input": "0.00000843",
      "input_tiers": [
       {
-       "cost": "0.000004",
+       "cost": "0.00000843",
        "min": 0,
        "max": 272000
       },
       {
-       "cost": "0.000008",
+       "cost": "0.00000323",
        "min": 272000
       }
      ],
-     "output": "0.000024",
+     "output": "0.0000289",
      "output_tiers": [
       {
-       "cost": "0.000024",
+       "cost": "0.0000289",
        "min": 0,
        "max": 272000
       },
       {
-       "cost": "0.000036",
+       "cost": "0.0000623",
        "min": 272000
       }
      ],
-     "input_cache_read": "0.0000004",
+     "input_cache_read": "0.000000449",
      "input_cache_read_tiers": [
       {
-       "cost": "0.0000004",
+       "cost": "0.000000449",
        "min": 0,
        "max": 272000
       },
       {
-       "cost": "0.0000008",
+       "cost": "0.000000729",
        "min": 272000
       }
      ],
-     "input_cache_write": "0.000005",
+     "input_cache_write": "0.00000983",
      "input_cache_write_tiers": [
       {
-       "cost": "0.000005",
+       "cost": "0.00000983",
        "min": 0,
        "max": 272000
       },
       {
-       "cost": "0.00001",
+       "cost": "0.0000273",
        "min": 272000
       }
      ]
     },
     "regional": {
      "eu": {
-      "input": "0.0000022",
+      "input": "0.00000949",
       "input_tiers": [
        {
-        "cost": "0.0000022",
+        "cost": "0.00000949",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000044",
+        "cost": "0.00000119",
         "min": 272000
        }
       ],
-      "output": "0.0000132",
+      "output": "0.0000713",
       "output_tiers": [
        {
-        "cost": "0.0000132",
+        "cost": "0.0000713",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000198",
+        "cost": "0.0000639",
         "min": 272000
        }
       ],
-      "input_cache_read": "0.00000022",
+      "input_cache_read": "0.000000249",
       "input_cache_read_tiers": [
        {
-        "cost": "0.00000022",
+        "cost": "0.000000249",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000044",
+        "cost": "0.000000179",
         "min": 272000
        }
       ],
-      "input_cache_write": "0.00000275",
+      "input_cache_write": "0.00000579",
       "input_cache_write_tiers": [
        {
-        "cost": "0.00000275",
+        "cost": "0.00000579",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000055",
+        "cost": "0.00000623",
         "min": 272000
        }
       ]
      },
      "us": {
-      "input": "0.0000022",
+      "input": "0.00000949",
       "input_tiers": [
        {
-        "cost": "0.0000022",
+        "cost": "0.00000949",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000044",
+        "cost": "0.00000119",
         "min": 272000
        }
       ],
-      "output": "0.0000132",
+      "output": "0.0000713",
       "output_tiers": [
        {
-        "cost": "0.0000132",
+        "cost": "0.0000713",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000198",
+        "cost": "0.0000639",
         "min": 272000
        }
       ],
-      "input_cache_read": "0.00000022",
+      "input_cache_read": "0.000000249",
       "input_cache_read_tiers": [
        {
-        "cost": "0.00000022",
+        "cost": "0.000000249",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000044",
+        "cost": "0.000000179",
         "min": 272000
        }
       ],
-      "input_cache_write": "0.00000275",
+      "input_cache_write": "0.00000579",
       "input_cache_write_tiers": [
        {
-        "cost": "0.00000275",
+        "cost": "0.00000579",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000055",
+        "cost": "0.00000623",
         "min": 272000
        }
       ],
       "fast": {
-       "input": "0.0000044",
+       "input": "0.00000119",
        "input_tiers": [
         {
-         "cost": "0.0000044",
+         "cost": "0.00000119",
          "min": 0,
          "max": 272000
         },
         {
-         "cost": "0.0000088",
+         "cost": "0.00000753",
          "min": 272000
         }
        ],
-       "output": "0.0000264",
+       "output": "0.0000133",
        "output_tiers": [
         {
-         "cost": "0.0000264",
+         "cost": "0.0000133",
          "min": 0,
          "max": 272000
         },
         {
-         "cost": "0.0000396",
+         "cost": "0.0000873",
          "min": 272000
         }
        ],
-       "input_cache_read": "0.00000044",
+       "input_cache_read": "0.000000179",
        "input_cache_read_tiers": [
         {
-         "cost": "0.00000044",
+         "cost": "0.000000179",
          "min": 0,
          "max": 272000
         },
         {
-         "cost": "0.00000088",
+         "cost": "0.000000263",
          "min": 272000
         }
        ],
-       "input_cache_write": "0.0000055",
+       "input_cache_write": "0.00000623",
        "input_cache_write_tiers": [
         {
-         "cost": "0.0000055",
+         "cost": "0.00000623",
          "min": 0,
          "max": 272000
         },
         {
-         "cost": "0.000011",
+         "cost": "0.0000619",
          "min": 272000
         }
        ]
@@ -7748,152 +7748,152 @@
    ],
    "knowledge": "2026-02-16",
    "pricing": {
-    "input": "0.000004",
+    "input": "0.00000843",
     "input_tiers": [
      {
-      "cost": "0.000004",
+      "cost": "0.00000843",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.000008",
+      "cost": "0.00000323",
       "min": 272000
      }
     ],
-    "output": "0.000024",
+    "output": "0.0000289",
     "output_tiers": [
      {
-      "cost": "0.000024",
+      "cost": "0.0000289",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.000036",
+      "cost": "0.0000623",
       "min": 272000
      }
     ],
-    "input_cache_read": "0.0000004",
+    "input_cache_read": "0.000000449",
     "input_cache_read_tiers": [
      {
-      "cost": "0.0000004",
+      "cost": "0.000000449",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.0000008",
+      "cost": "0.000000729",
       "min": 272000
      }
     ],
-    "input_cache_write": "0.000005",
+    "input_cache_write": "0.00000983",
     "input_cache_write_tiers": [
      {
-      "cost": "0.000005",
+      "cost": "0.00000983",
       "min": 0,
       "max": 272000
      },
      {
-      "cost": "0.00001",
+      "cost": "0.0000273",
       "min": 272000
      }
     ],
-    "web_search": "10",
+    "web_search": "12.9",
     "regional": {
      "eu": {
-      "input": "0.000004",
+      "input": "0.00000843",
       "input_tiers": [
        {
-        "cost": "0.000004",
+        "cost": "0.00000843",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000008",
+        "cost": "0.00000323",
         "min": 272000
        }
       ],
-      "output": "0.000024",
+      "output": "0.0000289",
       "output_tiers": [
        {
-        "cost": "0.000024",
+        "cost": "0.0000289",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000036",
+        "cost": "0.0000623",
         "min": 272000
        }
       ],
-      "input_cache_read": "0.0000004",
+      "input_cache_read": "0.000000449",
       "input_cache_read_tiers": [
        {
-        "cost": "0.0000004",
+        "cost": "0.000000449",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000008",
+        "cost": "0.000000729",
         "min": 272000
        }
       ],
-      "input_cache_write": "0.000005",
+      "input_cache_write": "0.00000983",
       "input_cache_write_tiers": [
        {
-        "cost": "0.000005",
+        "cost": "0.00000983",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00001",
+        "cost": "0.0000273",
         "min": 272000
        }
       ]
      },
      "us": {
-      "input": "0.0000044",
+      "input": "0.00000119",
       "input_tiers": [
        {
-        "cost": "0.0000044",
+        "cost": "0.00000119",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000088",
+        "cost": "0.00000753",
         "min": 272000
        }
       ],
-      "output": "0.0000264",
+      "output": "0.0000133",
       "output_tiers": [
        {
-        "cost": "0.0000264",
+        "cost": "0.0000133",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.0000396",
+        "cost": "0.0000873",
         "min": 272000
        }
       ],
-      "input_cache_read": "0.00000044",
+      "input_cache_read": "0.000000179",
       "input_cache_read_tiers": [
        {
-        "cost": "0.00000044",
+        "cost": "0.000000179",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.00000088",
+        "cost": "0.000000263",
         "min": 272000
        }
       ],
-      "input_cache_write": "0.0000055",
+      "input_cache_write": "0.00000623",
       "input_cache_write_tiers": [
        {
-        "cost": "0.0000055",
+        "cost": "0.00000623",
         "min": 0,
         "max": 272000
        },
        {
-        "cost": "0.000011",
+        "cost": "0.0000619",
         "min": 272000
        }
       ]
@@ -7970,272 +7970,272 @@
    ],
    "knowledge": "2026-04-30",
    "pricing": {
-    "input": "0.00001",
+    "input": "0.0000273",
     "input_tiers": [
      {
-      "cost": "0.00001",
+      "cost": "0.0000273",
       "max": 272001
      },
      {
-      "cost": "0.00002",
+      "cost": "0.0000193",
       "min": 272001
      }
     ],
-    "output": "0.00005",
+    "output": "0.000143",
     "output_tiers": [
      {
-      "cost": "0.00005",
+      "cost": "0.000143",
       "max": 272001
      },
      {
-      "cost": "0.000075",
+      "cost": "0.000179",
       "min": 272001
      }
     ],
-    "input_cache_read": "0.000001",
+    "input_cache_read": "0.00000473",
     "input_cache_read_tiers": [
      {
-      "cost": "0.000001",
+      "cost": "0.00000473",
       "max": 272001
      },
      {
-      "cost": "0.000002",
+      "cost": "0.00000719",
       "min": 272001
      }
     ],
-    "input_cache_write": "0.0000125",
+    "input_cache_write": "0.0000349",
     "input_cache_write_tiers": [
      {
-      "cost": "0.0000125",
+      "cost": "0.0000349",
       "max": 272001
      },
      {
-      "cost": "0.000025",
+      "cost": "0.0000459",
       "min": 272001
      }
     ],
-    "web_search": "10",
+    "web_search": "12.9",
     "service_tiers": {
      "flex": {
-      "input": "0.000005",
-      "output": "0.000025",
-      "input_cache_read": "0.0000005",
+      "input": "0.00000983",
+      "output": "0.0000459",
+      "input_cache_read": "0.000000543",
       "long_context": {
        "threshold": 272001,
-       "input": "0.00001",
-       "output": "0.0000375",
-       "input_cache_read": "0.000001"
+       "input": "0.0000273",
+       "output": "0.0000409",
+       "input_cache_read": "0.00000473"
       }
      },
      "priority": {
-      "input": "0.00002",
-      "output": "0.0001",
-      "input_cache_read": "0.000002",
+      "input": "0.0000193",
+      "output": "0.000273",
+      "input_cache_read": "0.00000719",
       "long_context": {
        "threshold": 272001,
-       "input": "0.00004",
-       "output": "0.00015",
-       "input_cache_read": "0.000004"
+       "input": "0.000129",
+       "output": "0.000529",
+       "input_cache_read": "0.00000843"
       }
      },
      "ultrafast": {
-      "input": "0.00006",
-      "output": "0.0003",
-      "input_cache_read": "0.000006",
+      "input": "0.000213",
+      "output": "0.000839",
+      "input_cache_read": "0.00000359",
       "long_context": {
        "threshold": 272001,
-       "input": "0.00012",
-       "output": "0.00045",
-       "input_cache_read": "0.000012"
+       "input": "0.000419",
+       "output": "0.000293",
+       "input_cache_read": "0.0000859"
       }
      }
     },
     "fast": {
-     "input": "0.00002",
+     "input": "0.0000193",
      "input_tiers": [
       {
-       "cost": "0.00002",
+       "cost": "0.0000193",
        "min": 0,
        "max": 272001
       },
       {
-       "cost": "0.00004",
+       "cost": "0.000129",
        "min": 272001
       }
      ],
-     "output": "0.0001",
+     "output": "0.000273",
      "output_tiers": [
       {
-       "cost": "0.0001",
+       "cost": "0.000273",
        "min": 0,
        "max": 272001
       },
       {
-       "cost": "0.00015",
+       "cost": "0.000529",
        "min": 272001
       }
      ],
-     "input_cache_read": "0.000002",
+     "input_cache_read": "0.00000719",
      "input_cache_read_tiers": [
       {
-       "cost": "0.000002",
+       "cost": "0.00000719",
        "min": 0,
        "max": 272001
       },
       {
-       "cost": "0.000004",
+       "cost": "0.00000843",
        "min": 272001
       }
      ],
-     "input_cache_write": "0.000025",
+     "input_cache_write": "0.0000459",
      "input_cache_write_tiers": [
       {
-       "cost": "0.000025",
+       "cost": "0.0000459",
        "max": 272001
       },
       {
-       "cost": "0.00005",
+       "cost": "0.000143",
        "min": 272001
       }
      ]
     },
     "regional": {
      "eu": {
-      "input": "0.000011",
+      "input": "0.0000619",
       "input_tiers": [
        {
-        "cost": "0.000011",
+        "cost": "0.0000619",
         "max": 272001
        },
        {
-        "cost": "0.000022",
+        "cost": "0.0000369",
         "min": 272001
        }
       ],
-      "output": "0.000055",
+      "output": "0.0000919",
       "output_tiers": [
        {
-        "cost": "0.000055",
+        "cost": "0.0000919",
         "max": 272001
        },
        {
-        "cost": "0.0000825",
+        "cost": "0.000233",
         "min": 272001
        }
       ],
-      "input_cache_read": "0.0000011",
+      "input_cache_read": "0.00000219",
       "input_cache_read_tiers": [
        {
-        "cost": "0.0000011",
+        "cost": "0.00000219",
         "max": 272001
        },
        {
-        "cost": "0.0000022",
+        "cost": "0.00000949",
         "min": 272001
        }
       ],
-      "input_cache_write": "0.00001375",
+      "input_cache_write": "0.0000229",
       "input_cache_write_tiers": [
        {
-        "cost": "0.00001375",
+        "cost": "0.0000229",
         "max": 272001
        },
        {
-        "cost": "0.0000275",
+        "cost": "0.0000389",
         "min": 272001
        }
       ]
      },
      "us": {
-      "input": "0.000011",
+      "input": "0.0000619",
       "input_tiers": [
        {
-        "cost": "0.000011",
+        "cost": "0.0000619",
         "max": 272001
        },
        {
-        "cost": "0.000022",
+        "cost": "0.0000369",
         "min": 272001
        }
       ],
-      "output": "0.000055",
+      "output": "0.0000919",
       "output_tiers": [
        {
-        "cost": "0.000055",
+        "cost": "0.0000919",
         "max": 272001
        },
        {
-        "cost": "0.0000825",
+        "cost": "0.000233",
         "min": 272001
        }
       ],
-      "input_cache_read": "0.0000011",
+      "input_cache_read": "0.00000219",
       "input_cache_read_tiers": [
        {
-        "cost": "0.0000011",
+        "cost": "0.00000219",
         "max": 272001
        },
        {
-        "cost": "0.0000022",
+        "cost": "0.00000949",
         "min": 272001
        }
       ],
-      "input_cache_write": "0.00001375",
+      "input_cache_write": "0.0000229",
       "input_cache_write_tiers": [
        {
-        "cost": "0.00001375",
+        "cost": "0.0000229",
         "max": 272001
        },
        {
-        "cost": "0.0000275",
+        "cost": "0.0000389",
         "min": 272001
        }
       ],
       "fast": {
-       "input": "0.000022",
+       "input": "0.0000369",
        "input_tiers": [
         {
-         "cost": "0.000022",
+         "cost": "0.0000369",
          "min": 0,
          "max": 272001
         },
         {
-         "cost": "0.000044",
+         "cost": "0.0000699",
          "min": 272001
         }
        ],
-       "output": "0.00011",
+       "output": "0.000349",
        "output_tiers": [
         {
-         "cost": "0.00011",
+         "cost": "0.000349",
          "min": 0,
          "max": 272001
         },
         {
-         "cost": "0.000165",
+         "cost": "0.000253",
          "min": 272001
         }
        ],
-       "input_cache_read": "0.0000022",
+       "input_cache_read": "0.00000949",
        "input_cache_read_tiers": [
         {
-         "cost": "0.0000022",
+         "cost": "0.00000949",
          "min": 0,
          "max": 272001
         },
         {
-         "cost": "0.0000044",
+         "cost": "0.00000119",
          "min": 272001
         }
        ],
-       "input_cache_write": "0.0000275",
+       "input_cache_write": "0.0000389",
        "input_cache_write_tiers": [
         {
-         "cost": "0.0000275",
+         "cost": "0.0000389",
          "max": 272001
         },
         {
-         "cost": "0.000055",
+         "cost": "0.0000919",
          "min": 272001
         }
        ]
@@ -8313,149 +8313,149 @@
    ],
    "knowledge": "2026-04-30",
    "pricing": {
-    "input": "0.00002",
+    "input": "0.0000193",
     "input_tiers": [
      {
-      "cost": "0.00002",
+      "cost": "0.0000193",
       "min": 0,
       "max": 272001
      },
      {
-      "cost": "0.00004",
+      "cost": "0.000129",
       "min": 272001
      }
     ],
-    "output": "0.0001",
+    "output": "0.000273",
     "output_tiers": [
      {
-      "cost": "0.0001",
+      "cost": "0.000273",
       "min": 0,
       "max": 272001
      },
      {
-      "cost": "0.00015",
+      "cost": "0.000529",
       "min": 272001
      }
     ],
-    "input_cache_read": "0.000002",
+    "input_cache_read": "0.00000719",
     "input_cache_read_tiers": [
      {
-      "cost": "0.000002",
+      "cost": "0.00000719",
       "min": 0,
       "max": 272001
      },
      {
-      "cost": "0.000004",
+      "cost": "0.00000843",
       "min": 272001
      }
     ],
-    "input_cache_write": "0.000025",
+    "input_cache_write": "0.0000459",
     "input_cache_write_tiers": [
      {
-      "cost": "0.000025",
+      "cost": "0.0000459",
       "max": 272001
      },
      {
-      "cost": "0.00005",
+      "cost": "0.000143",
       "min": 272001
      }
     ],
-    "web_search": "10",
+    "web_search": "12.9",
     "regional": {
      "eu": {
-      "input": "0.00002",
+      "input": "0.0000193",
       "input_tiers": [
        {
-        "cost": "0.00002",
+        "cost": "0.0000193",
         "min": 0,
         "max": 272001
        },
        {
-        "cost": "0.00004",
+        "cost": "0.000129",
         "min": 272001
        }
       ],
-      "output": "0.0001",
+      "output": "0.000273",
       "output_tiers": [
        {
-        "cost": "0.0001",
+        "cost": "0.000273",
         "min": 0,
         "max": 272001
        },
        {
-        "cost": "0.00015",
+        "cost": "0.000529",
         "min": 272001
        }
       ],
-      "input_cache_read": "0.000002",
+      "input_cache_read": "0.00000719",
       "input_cache_read_tiers": [
        {
-        "cost": "0.000002",
+        "cost": "0.00000719",
         "min": 0,
         "max": 272001
        },
        {
-        "cost": "0.000004",
+        "cost": "0.00000843",
         "min": 272001
        }
       ],
-      "input_cache_write": "0.000025",
+      "input_cache_write": "0.0000459",
       "input_cache_write_tiers": [
        {
-        "cost": "0.000025",
+        "cost": "0.0000459",
         "max": 272001
        },
        {
-        "cost": "0.00005",
+        "cost": "0.000143",
         "min": 272001
        }
       ]
      },
      "us": {
-      "input": "0.000022",
+      "input": "0.0000369",
       "input_tiers": [
        {
-        "cost": "0.000022",
+        "cost": "0.0000369",
         "min": 0,
         "max": 272001
        },
        {
-        "cost": "0.000044",
+        "cost": "0.0000699",
         "min": 272001
        }
       ],
-      "output": "0.00011",
+      "output": "0.000349",
       "output_tiers": [
        {
-        "cost": "0.00011",
+        "cost": "0.000349",
         "min": 0,
         "max": 272001
        },
        {
-        "cost": "0.000165",
+        "cost": "0.000253",
         "min": 272001
        }
       ],
-      "input_cache_read": "0.0000022",
+      "input_cache_read": "0.00000949",
       "input_cache_read_tiers": [
        {
-        "cost": "0.0000022",
+        "cost": "0.00000949",
         "min": 0,
         "max": 272001
        },
        {
-        "cost": "0.0000044",
+        "cost": "0.00000119",
         "min": 272001
        }
       ],
-      "input_cache_write": "0.0000275",
+      "input_cache_write": "0.0000389",
       "input_cache_write_tiers": [
        {
-        "cost": "0.0000275",
+        "cost": "0.0000389",
         "max": 272001
        },
        {
-        "cost": "0.000055",
+        "cost": "0.0000919",
         "min": 272001
        }
       ]
@@ -8494,9 +8494,9 @@
     ]
    },
    "pricing": {
-    "input": "0.000005",
-    "output": "0.00004",
-    "input_cache_read": "0.00000125"
+    "input": "0.00000983",
+    "output": "0.000129",
+    "input_cache_read": "0.00000369"
    }
   },
   {
@@ -8530,9 +8530,9 @@
     ]
    },
    "pricing": {
-    "input": "0.000002",
-    "output": "0.000008",
-    "input_cache_read": "0.0000002"
+    "input": "0.00000719",
+    "output": "0.00000323",
+    "input_cache_read": "0.000000613"
    }
   },
   {
@@ -8566,9 +8566,9 @@
     ]
    },
    "pricing": {
-    "input": "0.000005",
-    "output": "0.000032",
-    "input_cache_read": "0.00000125"
+    "input": "0.00000983",
+    "output": "0.0000569",
+    "input_cache_read": "0.00000369"
    }
   },
   {
@@ -8602,9 +8602,9 @@
     ]
    },
    "pricing": {
-    "input": "0.000005",
-    "output": "0.00003",
-    "input_cache_read": "0.00000125"
+    "input": "0.00000983",
+    "output": "0.0000239",
+    "input_cache_read": "0.00000369"
    }
   },
   {
@@ -8638,9 +8638,9 @@
     ]
    },
    "pricing": {
-    "input": "0.000005",
-    "output": "0.00003",
-    "input_cache_read": "0.00000125"
+    "input": "0.00000983",
+    "output": "0.0000239",
+    "input_cache_read": "0.00000369"
    }
   },
   {
@@ -8674,9 +8674,9 @@
     ]
    },
    "pricing": {
-    "input": "0.000005",
-    "output": "0.00003",
-    "input_cache_read": "0.00000125"
+    "input": "0.00000983",
+    "output": "0.0000239",
+    "input_cache_read": "0.00000369"
    }
   },
   {
@@ -8738,15 +8738,15 @@
    ],
    "knowledge": "2024-06-01",
    "pricing": {
-    "input": "0.0000001",
-    "output": "0.0000005",
-    "input_cache_read": "0.0000001",
+    "input": "0.000000293",
+    "output": "0.000000543",
+    "input_cache_read": "0.000000293",
     "varies_by_provider": true,
     "regional": {
      "us": {
-      "input": "0.0000001",
-      "output": "0.0000005",
-      "input_cache_read": "0.0000001"
+      "input": "0.000000293",
+      "output": "0.000000543",
+      "input_cache_read": "0.000000293"
      }
     }
    }
@@ -8807,8 +8807,8 @@
    ],
    "knowledge": "2024-06-01",
    "pricing": {
-    "input": "0.00000003",
-    "output": "0.00000014",
+    "input": "0.0000000163",
+    "output": "0.000000529",
     "varies_by_provider": true
    }
   },
@@ -8871,9 +8871,9 @@
    ],
    "knowledge": "2023-10-01",
    "pricing": {
-    "input": "0.000015",
-    "output": "0.00006",
-    "input_cache_read": "0.0000075"
+    "input": "0.0000939",
+    "output": "0.000213",
+    "input_cache_read": "0.00000869"
    }
   },
   {
@@ -8937,26 +8937,26 @@
    ],
    "knowledge": "2024-06-01",
    "pricing": {
-    "input": "0.000002",
-    "output": "0.000008",
-    "input_cache_read": "0.0000005",
-    "web_search": "10",
+    "input": "0.00000719",
+    "output": "0.00000323",
+    "input_cache_read": "0.000000543",
+    "web_search": "12.9",
     "service_tiers": {
      "priority": {
-      "input": "0.0000035",
-      "output": "0.000014",
-      "input_cache_read": "0.000000875"
+      "input": "0.00000919",
+      "output": "0.0000483",
+      "input_cache_read": "0.000000939"
      },
      "flex": {
-      "input": "0.000001",
-      "output": "0.000004",
-      "input_cache_read": "0.00000025"
+      "input": "0.00000473",
+      "output": "0.00000843",
+      "input_cache_read": "0.000000839"
      }
     },
     "fast": {
-     "input": "0.0000035",
-     "output": "0.000014",
-     "input_cache_read": "0.000000875"
+     "input": "0.00000919",
+     "output": "0.0000483",
+     "input_cache_read": "0.000000939"
     }
    }
   },
@@ -9021,10 +9021,10 @@
    ],
    "knowledge": "2024-06-01",
    "pricing": {
-    "input": "0.0000035",
-    "output": "0.000014",
-    "input_cache_read": "0.000000875",
-    "web_search": "10"
+    "input": "0.00000919",
+    "output": "0.0000483",
+    "input_cache_read": "0.000000939",
+    "web_search": "12.9"
    }
   },
   {
@@ -9082,9 +9082,9 @@
    ],
    "knowledge": "2023-10-01",
    "pricing": {
-    "input": "0.0000011",
-    "output": "0.0000044",
-    "input_cache_read": "0.00000055"
+    "input": "0.00000219",
+    "output": "0.00000119",
+    "input_cache_read": "0.000000959"
    }
   },
   {
@@ -9147,9 +9147,9 @@
    ],
    "knowledge": "2024-06-01",
    "pricing": {
-    "input": "0.00002",
-    "output": "0.00008",
-    "web_search": "10"
+    "input": "0.0000193",
+    "output": "0.0000589",
+    "web_search": "12.9"
    }
   },
   {
@@ -9213,26 +9213,26 @@
    ],
    "knowledge": "2024-06-01",
    "pricing": {
-    "input": "0.0000011",
-    "output": "0.0000044",
-    "input_cache_read": "0.000000275",
-    "web_search": "10",
+    "input": "0.00000219",
+    "output": "0.00000119",
+    "input_cache_read": "0.000000599",
+    "web_search": "12.9",
     "service_tiers": {
      "priority": {
-      "input": "0.000002",
-      "output": "0.000008",
-      "input_cache_read": "0.0000005"
+      "input": "0.00000719",
+      "output": "0.00000323",
+      "input_cache_read": "0.000000543"
      },
      "flex": {
-      "input": "0.00000055",
-      "output": "0.0000022",
-      "input_cache_read": "0.000000138"
+      "input": "0.000000959",
+      "output": "0.00000949",
+      "input_cache_read": "0.000000863"
      }
     },
     "fast": {
-     "input": "0.000002",
-     "output": "0.000008",
-     "input_cache_read": "0.0000005"
+     "input": "0.00000719",
+     "output": "0.00000323",
+     "input_cache_read": "0.000000543"
     }
    }
   },
@@ -9297,10 +9297,10 @@
    ],
    "knowledge": "2024-06-01",
    "pricing": {
-    "input": "0.000002",
-    "output": "0.000008",
-    "input_cache_read": "0.0000005",
-    "web_search": "10"
+    "input": "0.00000719",
+    "output": "0.00000323",
+    "input_cache_read": "0.000000543",
+    "web_search": "12.9"
    }
   },
   {
@@ -9366,9 +9366,9 @@
     }
    ],
    "pricing": {
-    "input": "0.0000002",
-    "output": "0.0000005",
-    "input_cache_read": "0.00000005"
+    "input": "0.000000613",
+    "output": "0.000000543",
+    "input_cache_read": "0.0000000583"
    }
   },
   {
@@ -9435,53 +9435,53 @@
     }
    ],
    "pricing": {
-    "input": "0.00000125",
+    "input": "0.00000369",
     "input_tiers": [
      {
-      "cost": "0.00000125",
+      "cost": "0.00000369",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.0000025",
+      "cost": "0.00000489",
       "min": 200001
      }
     ],
-    "output": "0.0000025",
+    "output": "0.00000489",
     "output_tiers": [
      {
-      "cost": "0.0000025",
+      "cost": "0.00000489",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000005",
+      "cost": "0.00000983",
       "min": 200001
      }
     ],
-    "input_cache_read": "0.0000002",
+    "input_cache_read": "0.000000613",
     "input_cache_read_tiers": [
      {
-      "cost": "0.0000002",
+      "cost": "0.000000613",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.0000004",
+      "cost": "0.000000449",
       "min": 200001
      }
     ],
-    "web_search": "5",
+    "web_search": "6.19",
     "service_tiers": {
      "priority": {
-      "input": "0.0000025",
-      "output": "0.000005",
-      "input_cache_read": "0.0000004",
+      "input": "0.00000489",
+      "output": "0.00000983",
+      "input_cache_read": "0.000000449",
       "long_context": {
        "threshold": 200001,
-       "input": "0.000005",
-       "output": "0.00001",
-       "input_cache_read": "0.0000008"
+       "input": "0.00000983",
+       "output": "0.0000273",
+       "input_cache_read": "0.000000729"
       }
      }
     },
@@ -9548,53 +9548,53 @@
     }
    ],
    "pricing": {
-    "input": "0.00000125",
+    "input": "0.00000369",
     "input_tiers": [
      {
-      "cost": "0.00000125",
+      "cost": "0.00000369",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.0000025",
+      "cost": "0.00000489",
       "min": 200001
      }
     ],
-    "output": "0.0000025",
+    "output": "0.00000489",
     "output_tiers": [
      {
-      "cost": "0.0000025",
+      "cost": "0.00000489",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000005",
+      "cost": "0.00000983",
       "min": 200001
      }
     ],
-    "input_cache_read": "0.0000002",
+    "input_cache_read": "0.000000613",
     "input_cache_read_tiers": [
      {
-      "cost": "0.0000002",
+      "cost": "0.000000613",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.0000004",
+      "cost": "0.000000449",
       "min": 200001
      }
     ],
-    "web_search": "5",
+    "web_search": "6.19",
     "service_tiers": {
      "priority": {
-      "input": "0.0000025",
-      "output": "0.000005",
-      "input_cache_read": "0.0000004",
+      "input": "0.00000489",
+      "output": "0.00000983",
+      "input_cache_read": "0.000000449",
       "long_context": {
        "threshold": 200001,
-       "input": "0.000005",
-       "output": "0.00001",
-       "input_cache_read": "0.0000008"
+       "input": "0.00000983",
+       "output": "0.0000273",
+       "input_cache_read": "0.000000729"
       }
      }
     }
@@ -9660,53 +9660,53 @@
     }
    ],
    "pricing": {
-    "input": "0.000002",
+    "input": "0.00000719",
     "input_tiers": [
      {
-      "cost": "0.000002",
+      "cost": "0.00000719",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000004",
+      "cost": "0.00000843",
       "min": 200001
      }
     ],
-    "output": "0.000006",
+    "output": "0.00000359",
     "output_tiers": [
      {
-      "cost": "0.000006",
+      "cost": "0.00000359",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000012",
+      "cost": "0.0000859",
       "min": 200001
      }
     ],
-    "input_cache_read": "0.0000003",
+    "input_cache_read": "0.000000353",
     "input_cache_read_tiers": [
      {
-      "cost": "0.0000003",
+      "cost": "0.000000353",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.0000006",
+      "cost": "0.000000233",
       "min": 200001
      }
     ],
-    "web_search": "5",
+    "web_search": "6.19",
     "service_tiers": {
      "priority": {
-      "input": "0.000004",
-      "output": "0.000012",
-      "input_cache_read": "0.0000006",
+      "input": "0.00000843",
+      "output": "0.0000859",
+      "input_cache_read": "0.000000233",
       "long_context": {
        "threshold": 200001,
-       "input": "0.000008",
-       "output": "0.000024",
-       "input_cache_read": "0.0000012"
+       "input": "0.00000323",
+       "output": "0.0000289",
+       "input_cache_read": "0.00000853"
       }
      }
     }
@@ -9771,53 +9771,53 @@
    ],
    "knowledge": "2026-02-01",
    "pricing": {
-    "input": "0.000002",
+    "input": "0.00000719",
     "input_tiers": [
      {
-      "cost": "0.000002",
+      "cost": "0.00000719",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000004",
+      "cost": "0.00000843",
       "min": 200001
      }
     ],
-    "output": "0.000006",
+    "output": "0.00000359",
     "output_tiers": [
      {
-      "cost": "0.000006",
+      "cost": "0.00000359",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000012",
+      "cost": "0.0000859",
       "min": 200001
      }
     ],
-    "input_cache_read": "0.0000005",
+    "input_cache_read": "0.000000543",
     "input_cache_read_tiers": [
      {
-      "cost": "0.0000005",
+      "cost": "0.000000543",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000001",
+      "cost": "0.00000473",
       "min": 200001
      }
     ],
-    "web_search": "5",
+    "web_search": "6.19",
     "service_tiers": {
      "priority": {
-      "input": "0.000004",
-      "output": "0.000012",
-      "input_cache_read": "0.000001",
+      "input": "0.00000843",
+      "output": "0.0000859",
+      "input_cache_read": "0.00000473",
       "long_context": {
        "threshold": 200001,
-       "input": "0.000008",
-       "output": "0.000024",
-       "input_cache_read": "0.000002"
+       "input": "0.00000323",
+       "output": "0.0000289",
+       "input_cache_read": "0.00000719"
       }
      }
     }
@@ -9882,53 +9882,53 @@
    ],
    "knowledge": "2026-05",
    "pricing": {
-    "input": "0.000002",
+    "input": "0.00000719",
     "input_tiers": [
      {
-      "cost": "0.000002",
+      "cost": "0.00000719",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000004",
+      "cost": "0.00000843",
       "min": 200001
      }
     ],
-    "output": "0.000006",
+    "output": "0.00000359",
     "output_tiers": [
      {
-      "cost": "0.000006",
+      "cost": "0.00000359",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000012",
+      "cost": "0.0000859",
       "min": 200001
      }
     ],
-    "input_cache_read": "0.0000005",
+    "input_cache_read": "0.000000543",
     "input_cache_read_tiers": [
      {
-      "cost": "0.0000005",
+      "cost": "0.000000543",
       "min": 0,
       "max": 200001
      },
      {
-      "cost": "0.000001",
+      "cost": "0.00000473",
       "min": 200001
      }
     ],
-    "web_search": "5",
+    "web_search": "6.19",
     "service_tiers": {
      "priority": {
-      "input": "0.000004",
-      "output": "0.000012",
-      "input_cache_read": "0.000001",
+      "input": "0.00000843",
+      "output": "0.0000859",
+      "input_cache_read": "0.00000473",
       "long_context": {
        "threshold": 200001,
-       "input": "0.000008",
-       "output": "0.000024",
-       "input_cache_read": "0.000002"
+       "input": "0.00000323",
+       "output": "0.0000289",
+       "input_cache_read": "0.00000719"
       }
      }
     }
@@ -9978,7 +9978,7 @@
     }
    ],
    "pricing": {
-    "image": "0.02"
+    "image": "0.0373"
    }
   },
   {
@@ -10025,20 +10025,20 @@
     }
    ],
    "pricing": {
-    "image": "0.06",
+    "image": "0.0343",
     "image_dimension_quality_pricing": [
      {
       "quality": "low",
-      "cost": "0.04"
+      "cost": "0.0219"
      },
      {
       "size": "2048x2048",
-      "cost": "0.08"
+      "cost": "0.0463"
      },
      {
       "size": "2048x2048",
       "quality": "low",
-      "cost": "0.06"
+      "cost": "0.0343"
      }
     ]
    }

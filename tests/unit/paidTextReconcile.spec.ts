@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AdmissionActor } from "../../lib/admissionTypes";
+import { vendorRatesIn } from "../helpers/vendorFigures";
 
 /**
  * Text jobs nothing will finish are refunded by the cron's pass
@@ -20,8 +21,11 @@ delete process.env.PLATFORM_ALLOWANCE_USD;
 
 const OWNER: AdmissionActor = { user: { id: "owner", email: "owner@example.invalid", name: "owner", role: "admin", owner: true, disabled: false, createdAt: 0, lastSeen: null } };
 const WRITER = "anthropic/claude-haiku-4.5";
-const MODEL = { id: WRITER, name: "Writer", owner: "anthropic", type: "language" as const, description: "", contextWindow: 100000, maxTokens: 5000, pricing: { input: "0.000001", output: "0.000002" } };
+const MODEL = { id: WRITER, name: "Writer", owner: "anthropic", type: "language" as const, description: "", contextWindow: 100000, maxTokens: 5000, pricing: { input: "0.00000113", output: "0.00000219" } }; // made-up rates
 const OLD = 31 * 60_000;
+test("the writer's made-up rates are no catalogue entry's", () => {
+  expect(vendorRatesIn(MODEL.pricing)).toEqual([]);
+});
 
 type Submit = () => Promise<{ ok: boolean; status: number; text: string }>;
 const cutOff: Submit = async () => ({ ok: false, status: 504, text: "" });

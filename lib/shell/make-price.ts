@@ -1,8 +1,10 @@
 import { isCinemaStudioModel } from "../cinemaStudioTypes";
-import { cinemaPriceParts } from "../cinemaHold";
+import { cinemaPriceDollars, cinemaPriceParts } from "../cinemaHold";
+import { dollars } from "../format";
+import { STATED_CHARGE_BAND } from "../runLimit";
 import type { ComposerModel, ComposerPicks, ComposerQuote, ComposerType, ModelPreference } from "../workspace/composer";
 import { composerSettings, DEFAULT_MODEL_PREFERENCE, shownTotal } from "../workspace/composer";
-import { exact, priceWords, upTo, type PriceValue } from "./price-words";
+import { exact, NO_AT_COST_FIGURE, NO_AT_COST_TITLE, PAYS_AT_COST_TITLE, priceTitle, priceWords, upTo, type DollarMode, type PriceValue } from "./price-words";
 import { NANO_BANANA_PRO_ID } from "../models";
 
 /**
@@ -106,4 +108,84 @@ export function goFigure(o: { total: number; count: number; type: ComposerType; 
     };
   }
   return { value: makeQuoteValue(o.total, o.type), usd: o.takeUsd != null && !o.batchRequoted ? o.takeUsd * o.count : null };
+}
+
+/**
+ * The house's dollars for the figures Make showed before a press, by their credits: one take's (the line), and the button's whole figure,
+ * which wins where both are the same credits. Only figures shown with dollars are kept.
+ */
+export function shownDollars(take: { credits: number | null; usd: number | null }, go: { credits: number | null; usd: number | null }): Map<number, number> {
+  const known = new Map<number, number>();
+  for (const f of [take, go]) if (f.credits != null && f.usd != null && Number.isFinite(f.usd) && f.usd >= 0) known.set(f.credits, f.usd);
+  return known;
+}
+
+/**
+ * The dollars Make keeps for its toast after the figures on screen change: a new map whenever the button shows a figure (an approximate one
+ * has no exact credits, and an approximate take carries no dollars, so that map is empty and the toast reads "—"), or null to keep the last
+ * one while the button shows none (a press sending).
+ */
+export function shownFor(goShown: boolean, take: { credits: number | null; usd: number | null }, go: { credits: number | null; usd: number | null }): Map<number, number> | null {
+  return goShown ? shownDollars(take, go) : null;
+}
+
+/**
+ * What the toast says a press cost (lib/shell/make.ts › madeLine): the accepted credits, carrying the dollars Make showed for that same
+ * figure. In the house that reads the dollars, or "—" for a figure Make never showed in dollars (never credits turned into dollars); a
+ * workspace that pays in credits reads the credits, as before.
+ */
+export const madeValue = (credits: number, shown: ReadonlyMap<number, number>): PriceValue | null => exact(credits, shown.get(credits));
+
+/* ── What Make draws, in the unit the workspace pays in ───────────────────── */
+
+/**
+ * A price as Make holds it (components/graphite/make/use-make.ts › MakePrice): an exact or "up to" figure (`value`), or Cinema Studio's
+ * approximate words (`about`, for the `credits` they are about), and beside either the same figure in the engine's own dollars (`usd`),
+ * which only the house workspace is sent (the quote routes strip it for every other workspace).
+ */
+export type MakeShown = { value: PriceValue | null; about: string | null; credits?: number | null; usd?: number | null };
+
+const usableUsd = (usd: unknown): usd is number => typeof usd === "number" && Number.isFinite(usd) && usd >= 0;
+
+/**
+ * The value Make draws: its figure, carrying the price's dollars where it has them. The price layer words a value's own `usd` in dollar
+ * mode (lib/shell/price-words.ts › priceWords), and Make keeps the house's dollars beside the figure (the live quote's, times the takes, plus
+ * an enhancement's, by goFigure's rule), so they go on the value it draws. A workspace that pays in credits reads the credits whatever the
+ * value carries, so its words are unchanged; a price with no dollars is drawn as it was, and the house reads "—" for it (never the customer
+ * price turned into dollars).
+ */
+export function shownValue(price: MakeShown | null | undefined): PriceValue | null {
+  const value = price?.value ?? null;
+  const usd = price?.usd;
+  if (!value || value.kind === "free" || !usableUsd(usd)) return value;
+  return { ...value, usd };
+}
+
+/** Cinema Studio's approximate price in the house's own dollars: "about $0.42, at most $1.26" (its ceiling at the same band as the credits wording, lib/cinemaHold.ts). */
+export const aboutDollars = (usd: number): string => `about ${dollars(usd)}, at most ${dollars(usd * STATED_CHARGE_BAND)}`;
+
+/** Cinema Studio's approximate words in `mode`: the credits wording as it was, or in dollar mode the dollars, or "—" while there are none. */
+export function aboutWords(price: MakeShown, mode: DollarMode): string | null {
+  if (!price.about) return null;
+  if (!mode.on) return price.about;
+  return usableUsd(price.usd) ? aboutDollars(price.usd) : NO_AT_COST_FIGURE;
+}
+
+/** The words Make draws for a price in `mode` ("43 cr", "$0.43", "about 31 cr, at most 93 cr", "—"), or null for none. */
+export function makePriceWords(price: MakeShown | null | undefined, mode: DollarMode): string | null {
+  if (!price) return null;
+  const value = shownValue(price);
+  return value ? priceWords(value, mode) : aboutWords(price, mode);
+}
+
+/**
+ * A Make price's hover: an exact one's (lib/shell/price-words.ts › priceTitle), or Cinema Studio's: in credits its dollars at the price of a
+ * credit (lib/cinemaHold.ts › cinemaPriceDollars), in dollar mode what the house's figure is ("Pays at cost", or why there is none yet).
+ */
+export function makePriceTitle(price: MakeShown | null | undefined, mode: DollarMode, creditUsd: number | null): string | null {
+  const value = shownValue(price);
+  if (value) return priceTitle(value, creditUsd, mode);
+  if (!price?.about) return null;
+  if (mode.on) return !usableUsd(price.usd) ? NO_AT_COST_TITLE : price.usd === 0 ? null : PAYS_AT_COST_TITLE;
+  return typeof price.credits === "number" ? cinemaPriceDollars(price.credits, creditUsd) : null;
 }
