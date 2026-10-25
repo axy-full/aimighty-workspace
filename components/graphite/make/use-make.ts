@@ -8,7 +8,7 @@ import { useGenPresetInbox } from "@/lib/shell/gen-preset";
 import { clearDraft, loadDraft, saveDraft } from "@/lib/draft";
 import { announceDraftWritten } from "@/lib/workspace/draft-written";
 import { announceMade, inferType, isMakeTool, madeLine, makeDest, makeType, typeNote } from "@/lib/shell/make";
-import { exact, priceWords, shortByWords, type PriceValue } from "@/lib/shell/price-words";
+import { priceWords, shortByWords, type PriceValue } from "@/lib/shell/price-words";
 import { cites, nearestSetting, recipeChips, referenceTags, retagRecipe, type GenPreset, type RecipeReference } from "@/lib/shell/recipe";
 import { useReferenceInbox } from "@/lib/shell/reference-inbox";
 import { useShell } from "@/lib/shell/state";
@@ -22,7 +22,7 @@ import { composerButtonParts, EMPTY_PROMPT, READING_MODELS, shownTotal, type Com
 import { cleanSetup, composeForSend, recoverSetup, withoutSetup, type FilmSetup } from "@/lib/workspace/film-vocabulary";
 import { EMPTY_MEMORY, needsPricedRead, rateQuery, readPickerMemory, recentKey, recentModels, rememberRecent, rowPrice, sheetRatesFrom, writePickerMemory, type PickerMemory, type PriceAt, type SheetRates } from "@/lib/workspace/model-picker";
 import { useComposer, type ComposerSent } from "@/lib/workspace/use-composer";
-import { goFigure, hiddenInMake, MAKE_MODEL_PREFERENCE, MAKE_PICKS, makeQuoteValue, rowSettings } from "@/lib/shell/make-price";
+import { goFigure, hiddenInMake, MAKE_MODEL_PREFERENCE, MAKE_PICKS, madeValue, makeQuoteValue, rowSettings, shownFor } from "@/lib/shell/make-price";
 import { useWorkspace } from "@/lib/workspace/state";
 import { useScopedFetch } from "@/lib/useScopedFetch";
 
@@ -94,10 +94,13 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
   const ws = useWorkspace();
   /* A press the server accepted: Make closes, says so, and tells the board (lib/shell/make.ts › announceMade). One held for credits, or a batch with a take
      not accepted, keeps Make open with its line instead: nothing has started. */
+  /* The house's dollars for the figures Make showed before the press (one take's, and the button's whole figure), by their credits: the toast
+     words the accepted figure in dollars when it is one of those, as the button did, and "—" when it is not (never credits turned into dollars). */
+  const shownUsd = useRef<Map<number, number>>(new Map());
   const sent = useCallback((made: ComposerSent) => {
     if (made.held) return;
     clearDraft(surface);
-    ws.toast(madeLine(made.name, priceWords(exact(made.credits)), made.takes));
+    ws.toast(madeLine(made.name, priceWords(madeValue(made.credits, shownUsd.current)), made.takes));
     /* The composer filed the take on a shot node in the saved draft: the board's own copy reads it again, so the card Make
        tells the board about is there to glide to (the Rig only catches up on arriving at a page, and Make is a panel over it). */
     announceDraftWritten(made.projectId);
@@ -440,6 +443,15 @@ export function useMake({ scope, project, projects = "ready", workspaceName, onP
     : approximate ? { value: null, about: composer.buttonParts.price, credits: total, usd: liveUsd != null && !composer.quote?.takes ? liveUsd * count : null }
       /* In dollars only when the whole figure is known in dollars (lib/shell/make-price.ts › goFigure): the take's own, plus the enhancement's when one is added. */
       : { ...goFigure({ total, count, type: state.type, takeUsd, batchRequoted: Boolean(composer.quote?.takes), enhanceCredits, enhanceUsd }), about: null };
+  /* Replaced whenever the button shows a figure (Cinema Studio's approximate one included, which leaves nothing in dollars); kept only while
+     there is none, as while a press is sending (lib/shell/make-price.ts › shownFor). */
+  const goShown = goPrice != null;
+  const goCredits = goPrice?.value && goPrice.value.kind !== "free" ? goPrice.value.credits : null;
+  const goUsd = goPrice?.value ? goPrice.usd ?? null : null;
+  useEffect(() => {
+    const next = shownFor(goShown, { credits: takeCredits ?? null, usd: takeUsd }, { credits: goCredits, usd: goUsd });
+    if (next) shownUsd.current = next;
+  }, [goShown, goCredits, goUsd, takeCredits, takeUsd]);
   const balanceNow = balance !== undefined ? balance : session.credits?.balance ?? null;
   /* Make stays pressable when the balance is short (the take waits, held, until credits arrive): the line only says so. */
   const short = !spendOff && !approximate && total != null && !submitting ? shortByWords(balanceNow, makeQuoteValue(total + (enhanceCredits ?? 0), state.type)) : null;

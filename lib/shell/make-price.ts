@@ -110,6 +110,32 @@ export function goFigure(o: { total: number; count: number; type: ComposerType; 
   return { value: makeQuoteValue(o.total, o.type), usd: o.takeUsd != null && !o.batchRequoted ? o.takeUsd * o.count : null };
 }
 
+/**
+ * The house's dollars for the figures Make showed before a press, by their credits: one take's (the line), and the button's whole figure,
+ * which wins where both are the same credits. Only figures shown with dollars are kept.
+ */
+export function shownDollars(take: { credits: number | null; usd: number | null }, go: { credits: number | null; usd: number | null }): Map<number, number> {
+  const known = new Map<number, number>();
+  for (const f of [take, go]) if (f.credits != null && f.usd != null && Number.isFinite(f.usd) && f.usd >= 0) known.set(f.credits, f.usd);
+  return known;
+}
+
+/**
+ * The dollars Make keeps for its toast after the figures on screen change: a new map whenever the button shows a figure (an approximate one
+ * has no exact credits, and an approximate take carries no dollars, so that map is empty and the toast reads "—"), or null to keep the last
+ * one while the button shows none (a press sending).
+ */
+export function shownFor(goShown: boolean, take: { credits: number | null; usd: number | null }, go: { credits: number | null; usd: number | null }): Map<number, number> | null {
+  return goShown ? shownDollars(take, go) : null;
+}
+
+/**
+ * What the toast says a press cost (lib/shell/make.ts › madeLine): the accepted credits, carrying the dollars Make showed for that same
+ * figure. In the house that reads the dollars, or "—" for a figure Make never showed in dollars (never credits turned into dollars); a
+ * workspace that pays in credits reads the credits, as before.
+ */
+export const madeValue = (credits: number, shown: ReadonlyMap<number, number>): PriceValue | null => exact(credits, shown.get(credits));
+
 /* ── What Make draws, in the unit the workspace pays in ───────────────────── */
 
 /**
