@@ -1,5 +1,6 @@
 import { db, ready, now } from "./db";
-import { currentTenant, type WorkspaceRole } from "./tenant";
+import { currentTenant } from "./tenant";
+import { isPerson } from "./security/people-only";
 import { creditsApply } from "./credits";
 import { billCreditsWith, marginFor, marginKeyOf } from "./creditTerms";
 import { creditsFor, type EstimateTerms } from "./billingTerms";
@@ -218,11 +219,7 @@ export async function setOwnCap(projectId: string, unit: CapUnit, value: number 
   });
 }
 
-/** Who sets a cap from the Brief: a signed-in person by their workspace role, or an API/MCP token, or Atomik (never either). */
-export type CapSetter = { kind: "person"; role: WorkspaceRole } | { kind: "token" } | { kind: "agent" };
 export type CapFromBrief = { ok: true } | { ok: false; status: 400 | 403 | 404; error: string };
-
-const ROLES: readonly WorkspaceRole[] = ["owner", "admin", "member"];
 
 export const CAP_FROM_BRIEF = {
   personOnly: "A spend limit is set by a person, signed in.",
@@ -237,15 +234,19 @@ export const CAP_FROM_BRIEF = {
  * (`projects.cap_credits`), here and only here; the spend-limit row then records `{"cap":"production"}`, never the figure
  * (docs/film-record-schema.md). Any member may set it where no cap is in force, or lower the one that is; raising it above
  * the cap in force (the production's own, or else the workspace's budget per production) is an owner's or an admin's (answer
- * 3 (b)). A token or Atomik never sets it (rule 11, rule 14). The rule is read and the cap written in ONE write transaction,
- * so a cap changed in between is judged as it stands; the write re-locks as setOwnCap does. Credits workspaces only. The
- * caller has already checked that the person may reach the project. Errors carry no figure.
+ * 3 (b)). A token or Atomik never sets it (rule 11, rule 14): who is setting it, and their role, are read from the request's
+ * own tenant store, never from the caller. The rule is read and the cap written in ONE write transaction, so a cap changed in
+ * between is judged as it stands; the write re-locks as setOwnCap does. Credits workspaces only. The caller has already checked
+ * that the person may reach the project. Errors carry no figure.
  */
-export async function setCapFromBrief(projectId: string, credits: number, by: CapSetter): Promise<CapFromBrief> {
-  if (by?.kind !== "person" || !ROLES.includes(by.role)) return { ok: false, status: 403, error: CAP_FROM_BRIEF.personOnly };
-  if (!creditsApply(currentTenant()?.workspace)) return { ok: false, status: 403, error: CAP_FROM_BRIEF.creditsOnly };
+export async function setCapFromBrief(projectId: string, credits: number): Promise<CapFromBrief> {
+  const store = currentTenant();
+  const user = store?.user;
+  if (!user || !isPerson({ user, token: store?.token })) return { ok: false, status: 403, error: CAP_FROM_BRIEF.personOnly };
+  if (!creditsApply(store?.workspace)) return { ok: false, status: 403, error: CAP_FROM_BRIEF.creditsOnly };
   if (!Number.isSafeInteger(credits) || credits < 1) return { ok: false, status: 400, error: CAP_FROM_BRIEF.wholeCredits };
-  const lifts = by.role === "owner" || by.role === "admin";
+  /* lib/auth.ts maps a workspace owner to role "admin" with owner set; either may lift a cap. */
+  const lifts = user.owner === true || user.role === "admin";
   return inWrite(async (tx): Promise<CapFromBrief> => {
     const row = (await tx.execute({ sql: "SELECT cap_credits FROM projects WHERE id = ?", args: [projectId] })).rows[0];
     if (!row) return { ok: false, status: 404, error: CAP_FROM_BRIEF.noSuch };
