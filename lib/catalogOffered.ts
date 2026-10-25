@@ -1,7 +1,16 @@
 import { CLAUDE_MODEL_IDS, VERIFIED_TEXT_MODEL_IDS } from "./atomikModelPolicy";
+import modelCatalogJson from "./modelCatalog.json";
 
-/** The verified OpenAI text ids: what the Treatment writer (TREATMENT_WRITER_MODEL) may name from the catalogue. */
-const TREATMENT_WRITER_IDS: readonly string[] = VERIFIED_TEXT_MODEL_IDS.filter((id) => id.startsWith("openai/"));
+/**
+ * The OpenAI language ids the snapshot was told to keep (scripts/ops/snapshot-catalog.mjs --add), read from lib/modelCatalog.json's
+ * `added` list, so no source file names them. An added id the snapshot has no entry for still counts: the price check then fails loudly.
+ */
+const snapshotJson = modelCatalogJson as { added?: readonly string[]; models: readonly { id: string; type: string }[] };
+export const ADDED_OPENAI_TEXT_IDS: readonly string[] = (snapshotJson.added ?? []).filter((id) =>
+  id.startsWith("openai/") && !snapshotJson.models.some((m) => m.id === id && m.type !== "language"));
+
+/** What the Treatment writer (TREATMENT_WRITER_MODEL) may name from the catalogue: the verified OpenAI text ids, and the snapshot's added OpenAI text ids. */
+const TREATMENT_WRITER_IDS: readonly string[] = [...VERIFIED_TEXT_MODEL_IDS.filter((id) => id.startsWith("openai/")), ...ADDED_OPENAI_TEXT_IDS];
 import { ENHANCER_MODELS } from "./shell/enhancer";
 import { DEFAULT_TEXT_MODELS } from "./platformLayer";
 import { ASTRA_BLENDER_MODEL } from "./astra-blender/scene";
@@ -16,7 +25,7 @@ const unique = (ids: Iterable<string>): string[] => [...new Set(ids)];
 
 /** Text ids that must carry input and output prices: without one, the feature that picks them has nothing to quote. */
 export const PRICED_TEXT_IDS: readonly string[] = unique([
-  /* Every id a Thinking slot may name, and every verified OpenAI id the Treatment writer may name. */
+  /* Every id a Thinking slot may name, and every OpenAI id the Treatment writer may name (verified, or added to the snapshot). */
   ...CLAUDE_MODEL_IDS,
   ...TREATMENT_WRITER_IDS,
   ...Object.values(ENHANCER_MODELS).flat(),

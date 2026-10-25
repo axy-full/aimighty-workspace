@@ -45,6 +45,11 @@ const UNOFFERED = [
   { id: "bfl/test-image-unoffered", type: "image", pricing: { image: "0.0139" } },
 ];
 const gatewayData = [...fixture.data, ...UNOFFERED];
+/* Ids the snapshot script added (--add), read from the snapshot: the OpenAI text ones are the Treatment writer's too (lib/catalogOffered.ts). */
+const ADDED = committed.added ?? [];
+const addedOpenAIText = ADDED.filter((id) => id.startsWith("openai/") && !committed.models.some((m) => m.id === id && m.type !== "language"));
+/* An entry added with --only-add after the snapshot was taken carries its own later date, and is not in the fixture (a response of the snapshot's day). */
+const ADDED_LATER = committed.models.filter((m) => m.pricedAt !== committed.pricedAt).map((m) => m.id);
 
 const ENV_KEYS = ["ENGINE_MOCK", "MODEL_CATALOG", "AI_GATEWAY_API_KEY", "AI_GATEWAY_BASE_URL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "XAI_API_KEY", "ATOMIK_MAX_REQUEST_USD", "TEXT_DIRECT", "VERCEL", "VERCEL_OIDC_TOKEN"] as const;
 let saved: Record<string, string | undefined> = {};
@@ -103,8 +108,9 @@ test("the fixture states no vendor's rate: only its price figures differ from th
 
 test("every model a feature can pick has input and output prices and a provider in the snapshot", () => {
   const mustPrice = [...new Set<string>([
-    ...CLAUDE_MODEL_IDS, ...VERIFIED_TEXT_MODEL_IDS.filter((id) => id.startsWith("openai/")), ...Object.values(ENHANCER_MODELS).flat(), ...Object.values(DEFAULT_TEXT_MODELS), ASTRA_BLENDER_MODEL,
+    ...CLAUDE_MODEL_IDS, ...VERIFIED_TEXT_MODEL_IDS.filter((id) => id.startsWith("openai/")), ...addedOpenAIText, ...Object.values(ENHANCER_MODELS).flat(), ...Object.values(DEFAULT_TEXT_MODELS), ASTRA_BLENDER_MODEL,
   ])];
+  for (const id of addedOpenAIText) expect(PRICED_TEXT_IDS, id).toContain(id);
   expect([...PRICED_TEXT_IDS].sort()).toEqual([...mustPrice].sort());
   // Gateway-listed entries and the provider-priced ones (models the gateway did not list, priced from the provider's page).
   const byId = new Map([...committed.models, ...(committed.providerPriced ?? [])].map((m) => [m.id, m]));
@@ -153,7 +159,12 @@ test("the snapshot is dated, covers every offered id, and names a provider for e
     expect(m.providerId, m.id).toBe(CATALOG_PROVIDER_OF_OWNER[m.owner]);
   }
   for (const m of committed.models) {
-    expect(m.pricedAt, m.id).toBe(committed.pricedAt);
+    if (ADDED_LATER.includes(m.id)) {
+      // Only an added id may carry its own date: a real day after the snapshot's, never before it.
+      expect(ADDED, m.id).toContain(m.id);
+      expect(m.pricedAt, m.id).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(Date.parse(`${m.pricedAt}T00:00:00Z`), m.id).toBeGreaterThan(Date.parse(`${committed.pricedAt}T00:00:00Z`));
+    } else expect(m.pricedAt, m.id).toBe(committed.pricedAt);
     expect(m.providerId, m.id).toBe(CATALOG_PROVIDER_OF_OWNER[m.owner]);
     expect(m.pricing, m.id).not.toBeNull();
   }
@@ -176,7 +187,7 @@ test("the static catalogue serves exactly what the gateway read serves", async (
   const offered = live.filter((m) => SNAPSHOT_CATALOG_IDS.includes(m.id));
   expect(live.length).toBe(offered.length + UNOFFERED.length);
   // Every priced entry is compared, not a sample.
-  expect(offered.map((m) => m.id).sort()).toEqual(committed.models.map((m) => m.id).sort());
+  expect(offered.map((m) => m.id).sort()).toEqual(committed.models.map((m) => m.id).filter((id) => !ADDED_LATER.includes(id)).sort());
   const snapshot = JSON.parse(JSON.stringify(buildCatalogSnapshot(gatewayData, SNAPSHOT_CATALOG_IDS, "2026-10-08", SOURCE))) as CatalogSnapshot;
   const served = staticCatalog(snapshot);
   /* Google text always goes direct (Vercel out), so the seven Gemini ids with no direct route (four have no direct model, three have a price Google's page does not confirm) are
