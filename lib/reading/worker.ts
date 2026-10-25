@@ -1,3 +1,4 @@
+import { engineMock } from "@/lib/mock";
 import type { WorkerOpened, WorkerPage } from "./shapes";
 
 /**
@@ -33,5 +34,5 @@ export function mockWorker(): ReadingWorker {
 
 /** The reader for this process: the mock under ENGINE_MOCK=1, else none yet. */
 export function workerFor(): ReadingWorker | null {
-  return process.env.ENGINE_MOCK === "1" ? mockWorker() : null;
+  return engineMock() ? mockWorker() : null;
 }

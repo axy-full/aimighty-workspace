@@ -134,7 +134,9 @@ test("a bad block, a page out of turn, a bad open, a timeout or no reader fails 
     expect(JSON.stringify(out)).not.toContain(SENTINEL);
   }
   expect(await read({ uploadId: "up_pdf" }, ALICE, { worker: worker({}, { pages: 0, geometry: "page", readerVersion: "t" }) })).toMatchObject({ state: "failed", errorCode: "bad_block" });
-  expect(await read({ uploadId: "up_pdf" }, ALICE, { worker: worker({}, { pages: 3000, geometry: "page", readerVersion: "t" }) })).toMatchObject({ state: "failed", errorCode: "too_large" });
+  /* No page cap: a long file is read to its last page (2 GiB is the only ceiling). */
+  const many = Object.fromEntries(Array.from({ length: 2500 }, (_, i) => [i + 1, { page: i + 1, blocks: [block()] }]));
+  expect(await read({ uploadId: "up_pdf" }, ALICE, { worker: worker(many) })).toMatchObject({ state: "done", pages: 2500 });
   const hangs: ReadingWorker = { async open() { return { pages: 1, geometry: "page", readerVersion: "t" }; }, page: () => new Promise(() => {}) };
   expect(await read({ uploadId: "up_pdf" }, ALICE, { worker: hangs, pageMs: 50 })).toMatchObject({ state: "failed", errorCode: "timeout" });
   const throws: ReadingWorker = { async open() { throw new Error(SENTINEL); }, async page() { throw new Error(SENTINEL); } };

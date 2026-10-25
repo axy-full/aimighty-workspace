@@ -8,8 +8,6 @@ import { z } from "zod";
  */
 
 export const MAX_BLOCK_TEXT = 4000;
-/** The most pages one reading takes; a file with more is refused as too large before any page is read. */
-export const MAX_PAGES = 2000;
 /** The largest upload there is (lib/uploadReservations.ts: 2 GiB); a larger one is never read. */
 export const MAX_READ_BYTES = 2 * 1024 ** 3;
 

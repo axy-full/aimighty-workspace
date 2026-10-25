@@ -6,7 +6,7 @@ import { isAgentId } from "@/lib/security/people-only";
 import { uploadOpenableBy } from "@/lib/uploadAccess";
 import { within } from "@/lib/abortWithin";
 import {
-  MAX_PAGES, MAX_READ_BYTES, readDocumentInput, readDocumentOutput, readingBlock, workerOpened, workerPage,
+  MAX_READ_BYTES, readDocumentInput, readDocumentOutput, readingBlock, workerOpened, workerPage,
   type ReadDocumentOutput, type ReadingBlock, type ReadingErrorCode,
 } from "./shapes";
 import { splitText } from "./split";
@@ -40,7 +40,7 @@ export class ReadingError extends Error {
   constructor(readonly status: 400 | 403 | 404, message: string) { super(message); this.name = "ReadingError"; }
 }
 
-/** How long one page may take before the reading fails with `timeout`. */
+/** How long one page may take before the reading fails with `timeout` (the lead's figure, a bound only; no page cap: 2 GiB is the ceiling). */
 export const PAGE_MS = 120_000;
 
 export type ReadDeps = {
@@ -100,7 +100,6 @@ export async function readDocument(raw: unknown, deps: ReadDeps = {}): Promise<R
   }
   if (!opened.success) return failed("bad_block");
   const { pages, geometry, readerVersion } = opened.data;
-  if (pages > MAX_PAGES) return failed("too_large");
   readingId = await keep.begin({ uploadId, sha256: file.sha256, projectId: projectId ?? null, askedBy: user.id, pages, geometry, readerVersion });
 
   const blocks: ReadingBlock[] = [];
