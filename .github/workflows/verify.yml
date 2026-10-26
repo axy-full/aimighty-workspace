@@ -46,6 +46,70 @@ jobs:
           fi
           node scripts/ci-select.mjs "$EVENT" "$BASE" < changed.txt > plan.json
           cat plan.json
+  # Secret scan (gitleaks, default rules plus the base's .gitleaks.toml): a pull request's own commits, or the range a push brought in.
+  # Any finding fails the job; the log and the report are redacted. Needs no repository secret. Required check name: secrets
+  # (docs/ci.md). The binary is pinned by version and sha256 below; to upgrade, take both from the release's checksums file.
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_URL: https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$RUNNER_TEMP/gitleaks.tar.gz" "$GITLEAKS_URL"
+          echo "$GITLEAKS_SHA256  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP/gitleaks" gitleaks
+          "$RUNNER_TEMP/gitleaks/gitleaks" version
+      - name: Scan the commits this run brings in
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = pull_request ]; then
+            range="$PR_BASE..$PR_HEAD"
+          elif [ "$PUSH_BEFORE" != 0000000000000000000000000000000000000000 ] && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            range="$PUSH_BEFORE..$PUSH_AFTER"
+          else
+            # A new branch or a rewritten history: no usable start, so the last 50 commits up to the pushed one.
+            echo "::warning::No usable start for the pushed range: scanning the last 50 commits."
+            range="-n 50 $PUSH_AFTER"
+          fi
+          echo "Scanning: $range"
+          # The rules come from the commit the change starts from (the PR's base, or the pushed range's start), never from the
+          # change itself, so a change cannot loosen the scan it is judged by. Without one, the default rules alone.
+          # .gitleaksignore in the checkout and inline gitleaks:allow comments are not honoured for the same reason.
+          if [ "$EVENT" = pull_request ]; then cfg_from="$PR_BASE"; else cfg_from="$PUSH_BEFORE"; fi
+          gl_dir="$RUNNER_TEMP/gl"
+          mkdir -p "$gl_dir/no-ignore"
+          if ! git show "$cfg_from:.gitleaks.toml" > "$gl_dir/gl.toml" 2>/dev/null; then
+            printf '[extend]\nuseDefault = true\n' > "$gl_dir/gl.toml"
+            echo "::notice::No .gitleaks.toml at $cfg_from: scanning with the default rules only."
+          fi
+          "$RUNNER_TEMP/gitleaks/gitleaks" git . --config "$gl_dir/gl.toml" --log-opts="$range" \
+            --gitleaks-ignore-path "$gl_dir/no-ignore" --ignore-gitleaks-allow \
+            --redact --no-banner --verbose --exit-code 1 \
+            --report-format sarif --report-path "$RUNNER_TEMP/gitleaks.sarif"
+      # Only when something was found: the report is redacted, and a clean run leaves nothing behind.
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: gitleaks-report
+          path: ${{ runner.temp }}/gitleaks.sarif
+          if-no-files-found: ignore
+          retention-days: 7
   unit:
     runs-on: ubuntu-latest
     timeout-minutes: 20

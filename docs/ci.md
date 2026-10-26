@@ -57,7 +57,7 @@ Nothing here removes a test from a spec: a spec that runs, runs whole (except th
 
 ## Required checks
 
-The check names the repository can require are unchanged: `unit (1)`, `unit (2)`, `unit (3)`, `core`, `browser (workbench)` and `browser (customer)`. `browser (…)` is a gate that reads the plan: in a full run it needs every shard to pass; in a slim run it needs the slim job to pass and the full shards to be skipped; in a docs run it needs the shards and the slim job skipped; with no plan it fails. A skipped job is not a pass by itself: only the combination the plan asked for passes. The `browser-shards (…)` jobs are skipped in slim and docs runs, so they should not be required checks (they never were).
+The check names the repository can require are unchanged: `unit (1)`, `unit (2)`, `unit (3)`, `core`, `browser (workbench)`, `browser (customer)` and `secrets`. `secrets` is the gitleaks scan of the commits a run brings in (a pull request's own commits; the pushed range on `main` and `release/1`): any finding fails it, the log is redacted, and the report is kept as an artifact only on a failure. Its binary is pinned by version and sha256 in `verify.yml`, and `.gitleaks.toml` extends the default rules with a short path-specific allowlist of fake test values. `browser (…)` is a gate that reads the plan: in a full run it needs every shard to pass; in a slim run it needs the slim job to pass and the full shards to be skipped; in a docs run it needs the shards and the slim job skipped; with no plan it fails. A skipped job is not a pass by itself: only the combination the plan asked for passes. The `browser-shards (…)` jobs are skipped in slim and docs runs, so they should not be required checks (they never were).
 
 ## Concurrency
 
