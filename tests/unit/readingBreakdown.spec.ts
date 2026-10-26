@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { READING } from "../../lib/copy";
 import {
-  breakdown, breakdownItem, briefBreakdown, CHECK_TURN, citationsOf, danglingCitations, mockBreakdownWriter, scriptBreakdown, writeBreakdown,
+  breakdown, breakdownItem, briefBreakdown, CHECK_TURN, citationsOf, danglingCitations, mockBreakdownChecker, mockBreakdownWriter, scriptBreakdown, writeBreakdown,
   WRITE_TURN, type Breakdown, type BreakdownInput, type BreakdownItem, type BreakdownStore,
 } from "../../lib/reading/breakdown";
 import type { ReadingBlock } from "../../lib/reading/shapes";
@@ -63,7 +63,7 @@ test("the two slots: the Treatment writer writes, the production's Thinking chec
 });
 
 test("a brief's breakdown through the mock engine: written, checked, every line on a block of this reading, kept nowhere yet", async () => {
-  const done = await writeBreakdown(BRIEF, { write: mockBreakdownWriter });
+  const done = await writeBreakdown(BRIEF, { write: mockBreakdownWriter, check: mockBreakdownChecker });
   expect(done.state).toBe("done");
   if (done.state !== "done") return;
   expect(done.stored).toBe(false);
@@ -73,13 +73,13 @@ test("a brief's breakdown through the mock engine: written, checked, every line 
   expect(danglingCitations(done.item.breakdown, "drd_brief1", BLOCKS)).toEqual([]);
   /* A store that keeps gets the item as answered. */
   const store = keeping();
-  const kept = await writeBreakdown(BRIEF, { write: mockBreakdownWriter, store });
+  const kept = await writeBreakdown(BRIEF, { write: mockBreakdownWriter, check: mockBreakdownChecker, store });
   expect(kept).toMatchObject({ state: "done", stored: true });
   expect(store.kept).toHaveLength(1);
 });
 
 test("a script's breakdown: one entry per scene, in order, each citing its heading", async () => {
-  const done = await writeBreakdown(SCRIPT, { write: mockBreakdownWriter });
+  const done = await writeBreakdown(SCRIPT, { write: mockBreakdownWriter, check: mockBreakdownChecker });
   expect(done.state).toBe("done");
   if (done.state !== "done" || done.item.breakdown.kind !== "script") throw new Error("not a script breakdown");
   expect(done.item.breakdown.entries.map((e) => [e.n, e.happens.text, e.happens.cites[0]])).toEqual([
@@ -91,7 +91,7 @@ test("a script's breakdown: one entry per scene, in order, each citing its headi
 test("off the mock engine there is no writer: 'Nothing billed', nothing kept", async () => {
   const store = keeping();
   expect(await writeBreakdown(BRIEF, { write: null, store })).toEqual({ state: "failed", errorCode: "writer_unavailable", message: READING.unavailable });
-  expect(await writeBreakdown(BRIEF, { check: null, store })).toMatchObject({ errorCode: "writer_unavailable" });
+  expect(await writeBreakdown(BRIEF, { write: mockBreakdownWriter, check: null, store })).toMatchObject({ errorCode: "writer_unavailable" });
   expect(store.kept).toEqual([]);
 });
 
@@ -107,7 +107,7 @@ test("every failure answers a code and fixed words, never the source's text, and
     ["the check throws", { write: mockBreakdownWriter, check: async () => { throw new Error(SECRET); } }, "writer_unavailable"],
   ];
   for (const [what, deps, code] of cases) {
-    const out = await writeBreakdown(BRIEF, { ...deps, store });
+    const out = await writeBreakdown(BRIEF, { check: mockBreakdownChecker, ...deps, store });
     expect(out, what).toMatchObject({ state: "failed", errorCode: code });
     expect(JSON.stringify(out), what).not.toContain(SECRET);
   }

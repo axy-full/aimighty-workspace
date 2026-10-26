@@ -15,9 +15,9 @@ import type { ReadingBlock } from "./shapes";
  *
  * Two slots, never named here: the Treatment writer writes the prose (`WRITE_TURN`, lib/atomikThinking › textJobPick), and the
  * production's Thinking setting checks it against the source (`CHECK_TURN`, the setting's own slot, not the judge's). Mock engine
- * only in this PR: off ENGINE_MOCK there is no writer here yet, and the answer is "Nothing billed". The price (free up to 15
- * pages of source, owner 25 Oct) is its own money PR; nothing here bills. Where a breakdown is kept waits for the owner's word, so
- * the store is a stub and the answer says `stored: false`.
+ * only in this PR: off ENGINE_MOCK there is no writer here yet, and the answer is "Nothing billed". The price is its own money
+ * PR; nothing here bills. Where a breakdown is kept waits for the owner's word, so the store is a stub and the answer says
+ * `stored: false`.
  */
 
 const ID = /^[A-Za-z0-9_-]{1,100}$/;
