@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import ts from "typescript";
+import * as uploadCaps from "../../lib/uploadCaps";
 
 /**
  * An upload dropped into a project whose connection dropped is resumed from Uploads (components/UploadRecovery.tsx).
@@ -47,8 +48,8 @@ async function client(fetch: typeof globalThis.fetch) {
     );
     return mod.exports as T;
   }
-  const recovery = module<typeof import("../../lib/uploadRecovery")>("lib/uploadRecovery.ts", { "./usePaidAction": { lockedClaim } });
-  const upload = module<typeof import("../../lib/uploadClient")>("lib/uploadClient.ts", { "./uploadRecovery": recovery });
+  const recovery = module<typeof import("../../lib/uploadRecovery")>("lib/uploadRecovery.ts", { "./usePaidAction": { lockedClaim }, "./uploadCaps": uploadCaps });
+  const upload = module<typeof import("../../lib/uploadClient")>("lib/uploadClient.ts", { "./uploadRecovery": recovery, "./uploadCaps": uploadCaps });
   return { ...upload, ...recovery, items };
 }
 

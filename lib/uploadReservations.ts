@@ -4,6 +4,7 @@ import { db, ready, id, now } from "./db";
 import { workspaceLimits, quotaVerdict } from "./limits";
 import { deleteChunks, deleteUpload } from "./storage";
 import { archiveAndDelete } from "./archive";
+import { MAX_CHAT_BYTES, MAX_REFERENCE_BYTES, uploadCapBytes, uploadCapWords, uploadChunkLimit, uploadChunkProblem, type UploadPurpose } from "./uploadCaps";
 
 export const UPLOAD_TTL_MS = 24 * 3600_000;
 /* Longer than the worst finish: a 2 GiB chat upload assembled in the
@@ -11,9 +12,9 @@ export const UPLOAD_TTL_MS = 24 * 3600_000;
    A finish that dies mid-way is reclaimed by an identical retry once it lapses. */
 export const UPLOAD_LEASE_MS = 20 * 60_000;
 export const CHUNK_LEASE_MS = 5 * 60_000;
-export const MAX_REFERENCE_BYTES = 200 * 1024 * 1024;
-export const MAX_CHAT_BYTES = 2 * 1024 * 1024 * 1024;
-export const MAX_UPLOAD_CHUNKS = Math.ceil(MAX_CHAT_BYTES / 3_500_000);
+/* The caps live in lib/uploadCaps.ts, which the browser reads too, so the client refuses what this finish would. */
+export { MAX_CHAT_BYTES, MAX_REFERENCE_BYTES };
+export const MAX_UPLOAD_CHUNKS = uploadChunkLimit("chat");
 const MAX_SESSIONS = 32;
 const initialized = new WeakMap<Client, Promise<void>>();
 
@@ -217,6 +218,8 @@ export async function reserveUploadChunk(
     index: number;
     bytes: number;
     sha256: string;
+    /** The kind the client says this upload is (the browser sends it); absent, the largest cap applies, as before. */
+    purpose?: UploadPurpose | null;
   },
   at = now(),
 ) {
@@ -224,12 +227,14 @@ export async function reserveUploadChunk(
   if (
     !Number.isInteger(input.index) ||
     input.index < 0 ||
-    input.index >= MAX_UPLOAD_CHUNKS ||
     input.bytes < 1 ||
     input.bytes > 4 * 1024 * 1024 ||
     !/^[a-f0-9]{64}$/.test(input.sha256)
   )
     throw new UploadError("Invalid upload chunk.");
+  /* A chunk past the kind's cap is refused before it is stored, in the finish's own words and status (lib/uploadCaps.ts). */
+  const pastCap = uploadChunkProblem({ index: input.index, bytes: 0, sessionBytes: 0, purpose: input.purpose });
+  if (pastCap) throw new UploadError(pastCap, 413);
   const quota = (await workspaceLimits()).storageBytes;
   return transaction(async (tx) => {
     let session = await sessionOf(tx, key);
@@ -260,6 +265,9 @@ export async function reserveUploadChunk(
           409,
         );
     } else {
+      /* A new chunk that would take the session's bytes past the kind's cap: the finish would refuse the whole file. */
+      const over = uploadChunkProblem({ index: input.index, bytes: input.bytes, sessionBytes: Number(session?.reserved_bytes ?? 0), purpose: input.purpose });
+      if (over) throw new UploadError(over, 413);
       await admit(tx, input.bytes, quota);
       if (!session) {
         await createSession(tx, key, input.owner, 0, at);
@@ -413,16 +421,8 @@ export async function beginUploadFinish(
       (total, chunk) => total + Number(chunk.bytes),
       0,
     );
-    if (
-      !found.prepared &&
-      bytes > (input.purpose === "chat" ? MAX_CHAT_BYTES : MAX_REFERENCE_BYTES)
-    )
-      throw new UploadError(
-        input.purpose === "chat"
-          ? "Chat files top out at 2 GB."
-          : "Reference files top out at 200 MB.",
-        413,
-      );
+    if (!found.prepared && bytes > uploadCapBytes(input.purpose))
+      throw new UploadError(uploadCapWords(input.purpose), 413);
     const lease = randomUUID();
     await tx.execute({
       sql: "UPDATE upload_sessions SET state='assembling',lease=?,lease_until=?,finish_key=?,expires_at=? WHERE id=?",

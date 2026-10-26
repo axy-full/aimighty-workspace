@@ -211,6 +211,19 @@ export const MONEY = {
 export const BRIEF = {
   readerLimits: "Up to {size} and {pages} pages of text.",
   readerScanned: "Scanned pages read once document reading ships.",
+  /** While the attached brief goes up to the Library, before it is read; the file's name and progress follow. */
+  uploading: "Uploading",
+  /** The brief is in the Library but the reader here could not read it (over its limits, scanned, or unreadable). */
+  savedUnread: "Saved to Library. Read once document reading ships.",
+} as const;
+
+/** Upload refusals that need no server (lib/uploadCaps.ts): `{cap}` is the cap in words, filled there from the cap itself. */
+export const UPLOADS = {
+  empty: "This file is empty.",
+  fileCap: "Files go up to {cap}.",
+  referenceCap: "References go up to {cap}.",
+  /** The connection dropped mid-upload: the browser's own words ("Failed to fetch") are never shown; Uploads resumes it. */
+  dropped: "Connection dropped. Resume it from Uploads.",
 } as const;
 
 /** The visitor site and "How Particl works" (v31.12–v31.16). */
@@ -223,5 +236,5 @@ export const SITE = {
 
 /** The whole table, by section; the strings test walks it. */
 export const COPY = {
-  STEPS, BUTTONS, MODES, THINKING, TICKS, CARD_STATES, ELEMENT_KINDS, SETTINGS, LIBRARY, PLACEHOLDERS, QUESTIONS, MONEY, BRIEF, SITE,
+  STEPS, BUTTONS, MODES, THINKING, TICKS, CARD_STATES, ELEMENT_KINDS, SETTINGS, LIBRARY, PLACEHOLDERS, QUESTIONS, MONEY, BRIEF, UPLOADS, SITE,
 } as const;

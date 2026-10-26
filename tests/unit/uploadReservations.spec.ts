@@ -53,6 +53,7 @@ async function load() {
     "./db": db,
     "./limits": limits,
     "./archive": await import("../../lib/archive"),
+    "./uploadCaps": await import("../../lib/uploadCaps"),
     "./storage": {
       deleteChunks: async (key: string) => {
         if (failDeletion) throw new Error("fixture deletion unavailable");
@@ -443,7 +444,7 @@ test("the documented two-GiB chat limit accepts the browser's 614th bounded chun
         bytes: 1,
         sha256: hash,
       }),
-    ).rejects.toThrow(/Invalid upload chunk/);
+    ).rejects.toMatchObject({ message: "Files go up to 2 GB.", status: 413 });
     await expect(
       api.beginUploadFinish("owner", session, {
         count: 614,
@@ -451,6 +452,42 @@ test("the documented two-GiB chat limit accepts the browser's 614th bounded chun
         purpose: "chat",
       }),
     ).rejects.toThrow(/missing/);
+  });
+});
+
+test("a chunk past its kind's cap is refused before it is stored, at the boundary, and nothing changes inside the cap", async () => {
+  const api = await load(),
+    { runInTenant } = await import("../../lib/tenant"),
+    caps = await import("../../lib/uploadCaps");
+  const chunk = (session: string, index: number, bytes: number, purpose?: "chat" | "reference") =>
+    api.reserveUploadChunk({ owner: "owner", session, index, bytes, sha256: hash, ...(purpose ? { purpose } : {}) });
+  /* Quota is not what is tested here: room for every byte the caps allow. */
+  await runInTenant(workspace("chunk-caps", 4 * 1024 ** 3), async () => {
+    const reference = "22222222-2222-4222-8222-222222222222";
+    expect(caps.uploadChunkLimit("reference")).toBe(60);
+    /* The 60th chunk (index 59) of a reference is its last in-cap one; the 61st is refused with the finish's words and 413. */
+    const last = await chunk(reference, 59, 1, "reference");
+    await api.markUploadChunkStored(last.key, 59, last.lease);
+    await expect(chunk(reference, 60, 1, "reference")).rejects.toMatchObject({ message: "References go up to 200 MB.", status: 413 });
+    /* The same index named as a file (or not named at all) is inside the 2 GB cap. */
+    const file = "33333333-3333-4333-8333-333333333333";
+    const named = await chunk(file, 60, 1, "chat");
+    await api.markUploadChunkStored(named.key, 60, named.lease);
+    const unnamed = await chunk(file, 61, 1);
+    await api.markUploadChunkStored(unnamed.key, 61, unnamed.lease);
+    /* A resend of a stored in-cap chunk answers as before (resume): nothing is reserved twice. */
+    await expect(chunk(reference, 59, 1, "reference")).resolves.toMatchObject({ stored: true });
+
+    /* Bytes: a reference session at exactly 200 MiB takes its last chunk; one byte more is refused before it is stored. */
+    const full = "44444444-4444-4444-8444-444444444444";
+    const four = 4 * 1024 * 1024;
+    for (let index = 0; index < 50; index++) {
+      const claim = await chunk(full, index, four, "reference");
+      await api.markUploadChunkStored(claim.key, index, claim.lease);
+    }
+    await expect(chunk(full, 50, 1, "reference")).rejects.toMatchObject({ message: "References go up to 200 MB.", status: 413 });
+    const status = await api.uploadSessionStatus("owner", full);
+    expect(status!.storedChunks).toHaveLength(50);
   });
 });
 

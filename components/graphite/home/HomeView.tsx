@@ -43,7 +43,7 @@ export type HomeViewProps = {
 export function HomeView({ scope, projects, status, error, onRetry, onPick, onCreate, onStarter, now }: HomeViewProps) {
   throwIfArmed("home");
   const nav = useHomeNav();
-  const { draft, onDraft, refs, setRefs, briefFile, setBriefFile, pending, problem, startProblem, thinking, retryThinking, figure, create, start, open, openSample } =
+  const { draft, onDraft, refs, setRefs, briefFile, setBriefFile, saveBrief, pending, problem, startProblem, thinking, retryThinking, figure, create, start, open, openSample } =
     useHomeStart({ scope, projects, onPick, onCreate, onStarter, openBoard: nav.openBoard });
   const approvals = useApprovals();
   /* The sample workspace spends nothing (the owner's switch): Start is not offered there. */
@@ -55,7 +55,7 @@ export function HomeView({ scope, projects, status, error, onRetry, onPick, onCr
       <div className="gx-hm-col">
         <section className="gx-hm-make" aria-labelledby="gx-hm-title">
           <h1 className="gx-hm-title" id="gx-hm-title" data-testid="page-title">What are we making?</h1>
-          <BriefBox draft={draft} onDraft={onDraft} refs={refs} onRefs={setRefs} briefFile={briefFile} onBriefFile={setBriefFile} busy={pending !== null}
+          <BriefBox draft={draft} onDraft={onDraft} refs={refs} onRefs={setRefs} briefFile={briefFile} onBriefFile={setBriefFile} onSaveBrief={saveBrief} busy={pending !== null}
             footer={<StartFooter thinking={thinking} figure={figure} busy={pending === "start"} disabled={pending !== null} onStart={() => void start()} onRetry={retryThinking} problem={startProblem} off={spendOff} />} />
         </section>
         <div className="gx-hm-starts">
