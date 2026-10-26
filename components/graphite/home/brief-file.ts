@@ -3,7 +3,17 @@
  * PDF goes through the screenplay importer's own reader (lib/workbench/screenplay-pdf.ts), loaded
  * only when a PDF is attached. No other formats (lead decision 23: no new reader dependency).
  */
+import { BRIEF } from "@/lib/copy";
+import { MAX_PDF_BYTES, MAX_SCRIPT_PAGES } from "@/lib/workbench/screenplay";
 import { BRIEF_MAX } from "./home-model";
+
+/**
+ * What the reader on this device takes, said under Attach a brief until document reading ships: the words are the copy
+ * table's, the figures the reader's own limits (MAX_PDF_BYTES, MAX_SCRIPT_PAGES), so the line changes when a limit does.
+ */
+export const BRIEF_READER_LIMITS = `${BRIEF.readerLimits
+  .replace("{size}", `${Math.round(MAX_PDF_BYTES / (1024 * 1024))} MB`)
+  .replace("{pages}", String(MAX_SCRIPT_PAGES))} ${BRIEF.readerScanned}`;
 
 export const BRIEF_ACCEPT = ".pdf,.txt,.md,.markdown,.fountain,application/pdf,text/plain,text/markdown";
 /** A text brief larger than this is not a brief. */

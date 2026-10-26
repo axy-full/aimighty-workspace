@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { HomeGlyph } from "../home/BriefBox";
-import { BRIEF_ACCEPT, BriefFileError, readBriefFile } from "../home/brief-file";
+import { BRIEF_ACCEPT, BRIEF_READER_LIMITS, BriefFileError, readBriefFile } from "../home/brief-file";
 import { ASPECTS, BRIEF_MAX, GLYPHS, LENGTHS, appendBrief, draftAspect, draftLength, withAspect, withLength, type HomeDraft } from "../home/home-model";
 
 /**
  * Home's "What are we making?" box in its guest state (Guest Home frame 1 / P1): the same words, chips and
- * classes as stream 2's BriefBox, and Attach a brief still reads a PDF or text file on this device into the box.
+ * classes as stream 2's BriefBox, and Attach a brief still reads a PDF or text file on this device into the box, with the
+ * reader's limits said under the row as on Home (BRIEF_READER_LIMITS).
  * What differs: Add references opens the sign-up sheet (a guest's files are never kept), and Start is outlined,
  * with no price and no thinking line, and opens the sheet. Nothing here calls a server.
  */
@@ -82,6 +83,7 @@ export function GuestBox({ draft, onDraft, onGated }: {
           ))}
         </span>
       </div>
+      <p className="gx-hm-note" data-testid="home-attach-hint">{BRIEF_READER_LIMITS}</p>
       {status ? (
         <p className={status.tone === "problem" ? "gx-hm-problem" : "gx-hm-note"} role={status.tone === "problem" ? "alert" : "status"} data-testid="home-box-status">{status.text}</p>
       ) : null}
