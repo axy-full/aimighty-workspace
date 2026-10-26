@@ -12,12 +12,16 @@ import { invalidate, PROJECTS_KEY } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
+const enginesOf = ({ video, image }: { video?: string; image?: string }) => ({ video, image });
+
 export const GET = withTenant(async function GET() {
   const got = await requireUser();
   if (got.response) return got.response;
   const [settings, layer] = await Promise.all([allSettings(), getPlatformLayer()]);
-  /* The models are resolved from every setting; only the member-safe ones are sent (lib/settings.ts INTERNAL_SETTING_KEYS). */
-  return NextResponse.json({ settings: memberSettings(settings), defaults: DEFAULTS, models: resolveModels(settings, layer), platformModels: layer.models });
+  /* The models are resolved from every setting; only the member-safe ones are sent (lib/settings.ts INTERNAL_SETTING_KEYS). Of them, only the
+     engines a composer opens on: the text jobs' models are the platform's, set in its console, and a thinking model is never sent to a person
+     (Amendment (iii) §E). Atomik's thinking reaches a member as the `atomikThinking` level alone. */
+  return NextResponse.json({ settings: memberSettings(settings), defaults: DEFAULTS, models: enginesOf(resolveModels(settings, layer)), platformModels: enginesOf(layer.models) });
 });
 
 /** Workspace-wide settings are the admin's to set — they change everyone's files. */

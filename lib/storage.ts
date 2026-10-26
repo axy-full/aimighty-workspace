@@ -10,6 +10,7 @@ import { readBodyCapped } from "./boundedBody";
 import type { ByteRange } from './mediaRange';
 import { cloudBackend, r2Backend, resolveStored, usingCloud, type ResolvedObject, type StorageBackend } from "./storage/backend";
 import { transferLimiter, TransferQueueTimeoutError } from "./storage/transfers";
+import { MAX_CHAT_BYTES, MAX_REFERENCE_BYTES } from "./uploadCaps";
 
 export { backendKind, usingCloud, type StorageBackendKind } from "./storage/backend";
 
@@ -558,10 +559,9 @@ return await withRecoveryActivity('storage', async () => {
 });
 }
 
-/** The largest reference upload accepted (MAX_REFERENCE_BYTES in
- *  lib/uploadReservations.ts, which imports this module); a public read past it
- *  is not one of our uploads. */
-export const PUBLIC_UPLOAD_MAX_BYTES = 200 * 1024 * 1024;
+/** The largest reference upload accepted (MAX_REFERENCE_BYTES, lib/uploadCaps.ts);
+ *  a public read past it is not one of our uploads. */
+export const PUBLIC_UPLOAD_MAX_BYTES = MAX_REFERENCE_BYTES;
 
 export async function readUploadBytes(uploadId: string, ext: string, storedUrl: string, maxBytes = PUBLIC_UPLOAD_MAX_BYTES): Promise<Buffer> {
   if (!/^[A-Za-z0-9_-]+$/.test(uploadId)) throw new Error("bad upload id");
@@ -706,7 +706,7 @@ export async function presignedUploadUrl(uploadId: string, ext: string, stored: 
  * -------------------------------------------------------------------- */
 
 export async function streamAssembleUpload(
-  sess: string, count: number, uploadId: string, ext: string, contentType: string, maxBytes = 2 * 1024 * 1024 * 1024
+  sess: string, count: number, uploadId: string, ext: string, contentType: string, maxBytes = MAX_CHAT_BYTES
 ): Promise<{ sha256: string; bytes: number; headChunk: Buffer }> {
 return await withRecoveryActivity('storage', async () => {
 

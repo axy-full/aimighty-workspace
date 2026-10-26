@@ -35,7 +35,7 @@ export function StartBrief({ scope, projects, online, onPick, onCreate, onOpened
   return (
     <section className="ph-section ph-start" aria-labelledby="ph-start-title" data-testid="phone-start">
       <h2 className="ph-start-title" id="ph-start-title" data-testid="phone-start-title">What are we making?</h2>
-      <BriefBox draft={s.draft} onDraft={s.onDraft} refs={s.refs} onRefs={s.setRefs} briefFile={s.briefFile} onBriefFile={s.setBriefFile} busy={s.pending !== null}
+      <BriefBox draft={s.draft} onDraft={s.onDraft} refs={s.refs} onRefs={s.setRefs} briefFile={s.briefFile} onBriefFile={s.setBriefFile} onSaveBrief={s.saveBrief} busy={s.pending !== null}
         footer={<StartFooter thinking={s.thinking} figure={s.figure} busy={s.pending === "start"} disabled={locked} onStart={() => void s.start()} onRetry={s.retryThinking} problem={s.startProblem} off={spendOff} />} />
       <TemplateRow pending={s.pending === "sample" || s.pending === "start" ? null : s.pending} disabled={locked} onPick={(t) => void s.create(t)} />
       {!online ? <p className="ph-row-line" role="status" data-testid="phone-start-offline">{NEEDS_CONNECTION}</p> : null}

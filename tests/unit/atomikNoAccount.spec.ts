@@ -200,10 +200,8 @@ test("Atomik's planner and agent think only with Claude, at the workspace's Thin
   const menu = atomikModels([entry(GEMINI), entry(OTHER_CLAUDE[0]), entry(LOW), entry(GROK_IDS[0]), entry(OPENAI_IDS[0])] as never);
   expect(menu.map((model) => model.id)).toEqual([LOW]);
 
-  /* The picker is replaced by Thinking in its own PR (3b-2); until then it groups as before and has no Gemini group. */
-  const picker = readFileSync("components/atomik/ModelPicker.tsx", "utf8");
-  expect(picker).toContain('const PROVIDERS = ["Claude", "Grok", "OpenAI"] as const;');
-  expect(picker).not.toContain("Gemini");
+  /* The picker is gone (3b-2): a person picks Thinking (High · Medium · Low), never a model, so no screen groups or lists them. */
+  expect(existsSync("components/atomik/ModelPicker.tsx")).toBe(false);
 });
 
 test("a chat saved on a model Atomik no longer thinks with reads as Auto with nothing to say; its stored row is kept, and nothing is refused", async () => {

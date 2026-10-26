@@ -2,8 +2,10 @@
 
 import { lockedClaim } from "./usePaidAction";
 import type { UploadedFile } from "./uploadClient";
+import { UPLOAD_CHUNK_BYTES, uploadCapBytes, uploadCapProblem } from "./uploadCaps";
 
-export const UPLOAD_CHUNK_BYTES = 3_500_000;
+/* The chunk size lives with the caps (lib/uploadCaps.ts), which the chunk route reads too. */
+export { UPLOAD_CHUNK_BYTES };
 const prefix = "particl:upload:v1:";
 const event = "particl-upload-recovery";
 export type UploadEnvelope = {
@@ -65,7 +67,7 @@ function validate(key: string, value: UploadEnvelope): UploadEnvelope {
     !Number.isFinite(value.file.lastModified) ||
     value.file.lastModified < 0 ||
     !["reference", "chat"].includes(value.purpose) ||
-    value.file.size > (value.purpose === "chat" ? 2048 : 200) * 1024 * 1024 ||
+    value.file.size > uploadCapBytes(value.purpose) ||
     value.chunkBytes !== UPLOAD_CHUNK_BYTES ||
     value.count !== Math.ceil(value.file.size / value.chunkBytes) ||
     !Array.isArray(value.storedChunks) ||
@@ -209,13 +211,9 @@ export async function claimUploadEnvelope(
 ) {
   if (!scope || !scope.startsWith("particl-active-"))
     throw new Error("Sign in to the intended workspace before uploading.");
-  const maximum = (purpose === "chat" ? 2048 : 200) * 1024 * 1024;
-  if (!file.size || file.size > maximum)
-    throw new Error(
-      purpose === "chat"
-        ? "Chat files must be between 1 byte and 2 GB."
-        : "Reference files must be between 1 byte and 200 MB.",
-    );
+  /* Refused from its size alone, before a byte is hashed: the finish would refuse it (lib/uploadCaps.ts). */
+  const problem = uploadCapProblem(file, purpose);
+  if (problem) throw new Error(problem);
   const identity = await uploadIdentity(file, purpose);
   const key = uploadEnvelopeKey(scope, identity);
   return lockedClaim(key, () => {

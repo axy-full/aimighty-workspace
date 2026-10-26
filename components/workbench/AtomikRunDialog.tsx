@@ -17,19 +17,17 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { Button } from './ui/button';
 import { studioRequest } from './GenerationDialog';
-import { ModelPicker, EffortPicker, type ThinkingModel } from '@/components/atomik/ModelPicker';
 import { SaveFailedError, saveThenContinue } from '@/lib/workbench/save-then-continue';
 
 export type AtomikRunTarget = { astraBlender?: AstraRequest; referenceAd?:ReferenceAnalysisSource; suite?: SuiteId; request: string; role?: string; model: string; effort?: string; depth: string; refs: string[] };
 /* The price only: the model and effort that run are Atomik's thinking, kept on the server (Amendment (iii) §E). */
 type Quote = { estimateCredits: number; screenplay?: { chars: number; includedChars: number; truncated: boolean }; key: string };
 
-export function AtomikRunDialog({ target, project, scope, models = [], onClose, onSave, onQueued, approximate = false }: {
+export function AtomikRunDialog({ target, project, scope, onClose, onSave, onQueued, approximate = false }: {
   target: AtomikRunTarget;
   project: Project;
   /** Authenticated workspace + user identity; never a guest/default scope. */
   scope: string;
-  models?: ThinkingModel[];
   onClose: () => void;
   onSave: () => Promise<boolean>;
   onQueued: (id: string) => void;
@@ -209,18 +207,12 @@ export function AtomikRunDialog({ target, project, scope, models = [], onClose, 
       </DialogHeader>
       <div className="dialog-fields">
         {suite && <p className="small-copy">Inspect the project, develop a proposal and check references in up to three reasoning steps. Review the resulting prompts and nodes before any media generation.</p>}
-        {pending && <p className="small-copy">Recovering the previously submitted request. Its original model, instructions and price are preserved.</p>}
+        {pending && <p className="small-copy">Recovering the previously submitted request. Its original instructions and price are preserved.</p>}
         <label className="field-label">Request
           <textarea aria-label="Atomik request" value={request} onChange={event => setRequest(event.target.value)} disabled={busy || !!pending || !loaded} maxLength={12000} />
         </label>
         <div className="generation-options">
-          {/* The server sends no thinking models (never disclosed) and ignores a pick: with no list the pickers draw nothing, until Thinking replaces them. */}
-          {models.length > 0 && <div className="atomik-option-field atomik-option-model"><label htmlFor="atomik-request-model">Thinking model</label>
-            <ModelPicker id="atomik-request-model" label="Atomik request model" value={model} models={suite ? models.filter(item => /^(anthropic|openai)\//.test(item.id)) : models} disabled={!!astraBlender || busy || !!pending || !loaded} onPick={value => { setModel(value); setEffort('auto'); }} />
-          </div>}
-          {models.length > 0 && <div className="atomik-option-field"><label htmlFor="atomik-request-effort">Reasoning effort</label>
-            <EffortPicker id="atomik-request-effort" label="Atomik request effort" value={effort} model={models.find(option => option.id === model)} onPick={setEffort} disabled={busy || !!pending || !loaded} />
-          </div>}
+          {/* No model or effort is picked here: Atomik thinks at the workspace's Thinking setting (lib/atomikThinking.ts). */}
           {!astraBlender && <label>Response detail
             <select aria-label="Atomik request depth" value={depth} disabled={busy || !!pending || !loaded} onChange={event => setDepth(event.target.value)}>
               {['Quick', 'Considered', 'Deep'].map(value => <option key={value}>{value}</option>)}

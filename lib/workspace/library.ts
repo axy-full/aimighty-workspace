@@ -476,6 +476,9 @@ export async function uploadToProject(scope: string, projectId: string, files: F
   return completed;
 }
 
+/** A device file that is already stored in the workspace (its upload's receipt): filed, not uploaded again. */
+export type StoredFile = { file: File; stored: UploadedFile };
+
 /**
  * Device files into this project's Library, from any drop or prompt box
  * (owner, 25 September: every kind of media, from anywhere). A picture or
@@ -487,20 +490,26 @@ export async function uploadToProject(scope: string, projectId: string, files: F
  * One file failing does not lose the others: it is named in `notes` and the
  * rest still upload and are answered, so a prompt box attaches what arrived
  * instead of leaving it in the Library with only an error to show.
+ *
+ * A file that is already up (`{ file, stored }`: Home's Attach a brief uploads
+ * the brief when it is attached) is only filed, never sent again.
  */
-export async function uploadFilesToProject(scope: string, projectId: string, files: File[]): Promise<{ ids: string[]; uploads: UploadedFile[]; notes: string[] }> {
+export async function uploadFilesToProject(scope: string, projectId: string, files: (File | StoredFile)[]): Promise<{ ids: string[]; uploads: UploadedFile[]; notes: string[] }> {
   const key = keyOf(scope, projectId);
   if (files.length > 20) throw new Error("Choose up to 20 files at a time.");
   const ids: string[] = [], notes: string[] = [], uploads: UploadedFile[] = [];
   const failed = new Map<string, string[]>();
   try {
-    for (const file of files) {
+    for (const item of files) {
+      const kept = "stored" in item ? item.stored : null;
+      const file = "stored" in item ? item.file : item;
       set(key, { uploading: `Uploading ${file.name}` });
       const progress = (pct: number) => set(key, { uploading: `${file.name} · ${pct}%` });
       const media = file.type.startsWith("image/") || file.type.startsWith("video/");
       try {
         let stored: UploadedFile;
-        if (media) {
+        if (kept) stored = kept;
+        else if (media) {
           try { stored = await uploadFile(file, "reference", progress, { scope, projectId }); }
           catch (error) {
             /* A dropped connection is not a refusal: the upload stays saved for Resume (components/UploadRecovery.tsx), and is never started again as a second upload. */

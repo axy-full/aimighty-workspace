@@ -248,6 +248,8 @@ It is off for every customer workspace. When it is off, nothing is made, read or
 - **The spend-limit row (`ceiling`) holds a reference to the production's existing cap, never a figure.**
   - The figure stays in `projects.cap_credits`, which the credit conversion already covers (`lib/creditConversionTenant.ts:68-73`).
   - Only a person sets it (rule 11). "Decide for me" leaves it at "No limit". This is question 9.
+  - **Other** (owner, 25 Oct 2026): the figure a person types becomes the production's own cap through the money path (`setCapFromBrief` in `lib/caps.ts`). Only once that write has landed does the row record `{"cap":"production"}`. The figure is never in the row.
+  - **Who may set it.** Any member sets the spend limit at the Brief where no cap is in force, or lowers the one that is. Raising it above the cap in force (the production's own, or else the workspace's budget per production), or choosing No limit where a cap is set, is an owner's or an admin's. An API or MCP token and Atomik never set it.
 - **Take state.**
   - `generations` is the truth for a take's state: picked, and Sent (today's `approved_*`, `lib/db.ts:1062`; `CLAUDE.md:56`).
   - The item holds the reject reason, the quote and the edges, and reads the take's state live in the same query.

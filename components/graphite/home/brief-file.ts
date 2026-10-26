@@ -29,6 +29,12 @@ export function briefKind(file: Pick<File, "name" | "type">): BriefKind | null {
 
 export class BriefFileError extends Error {}
 
+/** Whether the reader on this device takes a file of this size at all (a PDF up to MAX_PDF_BYTES, a text file up to 2 MB). */
+export function briefReadable(file: Pick<File, "name" | "type" | "size">): boolean {
+  const kind = briefKind(file);
+  return kind === "pdf" ? file.size <= MAX_PDF_BYTES : kind === "text" ? file.size <= TEXT_MAX_BYTES : false;
+}
+
 /** The file's words, at most the brief's limit (`cut` when it was longer). */
 export async function readBriefFile(file: File, signal: AbortSignal, onPage?: (page: number, total: number) => void): Promise<{ text: string; cut: boolean }> {
   const kind = briefKind(file);

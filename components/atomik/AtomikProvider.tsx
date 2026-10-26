@@ -13,7 +13,6 @@ import { useAtomikQuote } from "@/lib/useAtomikQuote";
 import { ARCHIVED_NOTE, chatOfRequest, type Thread } from "@/lib/atomikThreadsText";
 import { useRememberedThread, useThreadSends } from "./threads/useThreadSends";
 import type { PaidTextQuoteShown } from "@/lib/paidText";
-import type { ThinkingModel } from "./ModelPicker";
 import { ACCOUNT_MODEL_PREFIX, ACCOUNT_STEP_NOTE, isAccountStep } from "@/lib/atomikAccountStep";
 import { approvedBody, fetchStepQuote, planTotal, quoteMoved, stepPrice, stepRender, type StepQuote, type StepRender, type StepRenderContext } from "@/lib/atomikStepRender";
 import { isKeyStep, keyStepFamily, keyStepLabel } from "@/lib/atomikKeySteps";
@@ -48,7 +47,7 @@ import { creditRate, priceValue, type PriceValue } from "@/lib/shell/price-words
  */
 
 type Loaded = { chat: Chat; messages: Message[]; steps: Step[] };
-type Index = { chats: (Chat & { needsApproval: boolean })[]; engines: Engine[]; models?: { featured: ThinkingModel[]; rest: ThinkingModel[] } };
+type Index = { chats: (Chat & { needsApproval: boolean })[]; engines: Engine[] };
 
 export type Current =
   | { kind: "idle" }
@@ -129,15 +128,8 @@ export type AtomikLive = {
   busy: boolean;
   error: string | null;
   recoveryText:string|null;
-  models: ThinkingModel[];
-  model: string;
-  effort: string;
-  /** Why the chat's saved thinking model became Auto (one Atomik no longer offers), while nothing else is picked. */
-  modelNote: string | null;
   draftText: string;
   setDraftText: (text: string) => void;
-  setThinkingModel: (model: string) => void;
-  setReasoningEffort: (effort: string) => void;
   quote: PaidTextQuoteShown | null;
   quoteError: string | null;
   quoting: boolean;
@@ -241,26 +233,18 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const legacyHere = !!paid.pending && !!activeId && legacyChat === activeId;
   const ownSave = sends.pendingOf(activeId);
   const pending = legacyHere ? paid.pending : ownSave?.pending ?? null;
-  const recovered = pending ? JSON.parse(pending.body) as {text?:string;model?:string;effort?:string} : null;
+  const recovered = pending ? JSON.parse(pending.body) as {text?:string} : null;
   const recoveryText = recovered ? String(recovered.text ?? "") : null;
   const composerScope = JSON.stringify([workspace?.id, email, production?.id, activeId]);
-  /* Drafts and picks are each thread's own: switching threads keeps what was typed in the other. */
-  const [selections, setSelections] = useState<Record<string, { model: string; effort: string }>>({});
+  /* Drafts are each thread's own: switching threads keeps what was typed in the other. Nothing here picks a model or an effort:
+     Atomik thinks at the workspace's Thinking setting (lib/atomikThinking.ts), and the quote says which level. */
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const selected = selections[composerScope] ?? null;
-  const savedChat = loaded?.chat ?? null;
-  const model = recovered?.model ?? selected?.model ?? savedChat?.model ?? "auto";
-  const effort = recovered?.effort ?? selected?.effort ?? savedChat?.effort ?? "auto";
   const draftText = recoveryText ?? drafts[composerScope] ?? "";
-  const models = useMemo(() => [...(index?.models?.featured ?? []), ...(index?.models?.rest ?? [])], [index]);
-  const modelNote = !recovered?.model && !selected && savedChat?.modelNote ? savedChat.modelNote : null;
   const locked = !!pending || busy;
   const setDraftText = useCallback((text: string) => { if (!locked) setDrafts((all) => ({ ...all, [composerScope]: text })); }, [composerScope, locked]);
-  const setThinkingModel = useCallback((value: string) => { if (!locked) setSelections((all) => ({ ...all, [composerScope]: { model: value, effort: "auto" } })); }, [composerScope, locked]);
-  const setReasoningEffort = useCallback((value: string) => { if (!locked) setSelections((all) => ({ ...all, [composerScope]: { model, effort: value } })); }, [composerScope, model, locked]);
   /* An archived thread is not quoted: nothing is planned in it until it is restored. */
   const { quote, error: quoteError, loading: quoting } = useAtomikQuote(activeId ? `/api/atomik/${encodeURIComponent(activeId)}` : "/api/atomik",
-    !pending && !archived && draftText.trim() ? { text: draftText.trim(), model, effort, projectId: production?.id ?? null } : null);
+    !pending && !archived && draftText.trim() ? { text: draftText.trim(), projectId: production?.id ?? null } : null);
 
   /* A claimed step is held against a second Continue only while the plan
      still shows it past proposed. One the server settled back to proposed
@@ -438,7 +422,6 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
         const madeScope = JSON.stringify([workspace?.id, email, production?.id, made]);
         const was = sentScope;
         setDrafts((all) => { const next = { ...all, [madeScope]: all[was] ?? "" }; delete next[was]; return next; });
-        setSelections((all) => { if (!all[was]) return all; const next = { ...all, [madeScope]: all[was] }; delete next[was]; return next; });
         sentScope = madeScope;
         fly(keys, null); keys = [made]; fly(keys, { busy: true });
         setChatFor({ id: made, projectId: prodKey }); setDismissed(null); remember(made);
@@ -592,7 +575,7 @@ export function AtomikProvider({ children }: { children: ReactNode }) {
   const fmt = useCallback((n: number) => money.price(n), [money]);
   const value: AtomikLive = {
     chat: loaded?.chat ?? null, messages, plan, current, engines, ring, word, totals, credits, priceOf, priceLabel, approvable, approximate, heldWords, stepQuoteError, hosted: true, isReadOnly, fmt, engineLabel,
-    busy, error: paid.error ?? ownSave?.error ?? errors[activeKey] ?? null, recoveryText, models, model, effort, modelNote, draftText, setDraftText, setThinkingModel, setReasoningEffort, quote, quoteError, quoting, send, approve, stop, changeEngine, clear: start, threads,
+    busy, error: paid.error ?? ownSave?.error ?? errors[activeKey] ?? null, recoveryText, draftText, setDraftText, quote, quoteError, quoting, send, approve, stop, changeEngine, clear: start, threads,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -607,7 +590,7 @@ const EMPTY_THREADS: AtomikThreads = {
 const EMPTY: AtomikLive = {
   chat: null, messages: [], plan: [], current: { kind: "idle" }, engines: [], ring: { mode: "idle" }, word: null,
   totals: { total: 0, unpriced: 0, underCap: null, planning: 0 }, credits: () => null, priceOf: () => null, priceLabel: () => "", approvable: () => false, approximate: () => false, heldWords: () => null, stepQuoteError: null, hosted: false, isReadOnly: () => false, fmt: (n) => String(n), engineLabel: (id) => id,
-  busy: false, error: null, recoveryText:null, models:[], model:"auto", effort:"auto", modelNote:null, draftText:"", setDraftText:()=>{}, setThinkingModel:()=>{}, setReasoningEffort:()=>{}, quote:null, quoteError:null, quoting:false, send: async () => {}, approve: async () => {}, stop: async () => {}, changeEngine: async () => {}, clear: () => {}, threads: EMPTY_THREADS,
+  busy: false, error: null, recoveryText:null, draftText:"", setDraftText:()=>{}, quote:null, quoteError:null, quoting:false, send: async () => {}, approve: async () => {}, stop: async () => {}, changeEngine: async () => {}, clear: () => {}, threads: EMPTY_THREADS,
 };
 
 export function useAtomik(): AtomikLive {

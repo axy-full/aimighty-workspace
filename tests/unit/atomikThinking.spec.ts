@@ -14,7 +14,7 @@ import {
   atomikModelIds, atomikThinkingSlots, isAtomikModel, offersEffort, selectAtomikThinking, thinkingFor, thinkingModelEnv, treatmentWriter, type AtomikTurn, type Thinking,
 } from "../../lib/atomikModelPolicy";
 import { DIRECT_MODEL_IDS } from "../../lib/textRoute";
-import { THINKING_OPTIONS, settingProblem } from "../../lib/settingValues";
+import { THINKING_OPTIONS, settingProblem, thinkingWord } from "../../lib/settingValues";
 
 /*
  * Atomik's thinking: three settings (owner, 22 Oct 2026; Amendment (iii) §E), each a slot whose model the deployment's env names (owner,
@@ -53,6 +53,9 @@ test("the three settings: each slot's model is the env's, at high effort, and th
   /* The words a person is shown are the three settings, never a model or an effort; the settings list holds the same values. */
   expect(THINKING_OPTIONS).toEqual([["high", "High"], ["medium", "Medium"], ["low", "Low"]]);
   expect(THINKING_OPTIONS.map(([value]) => value)).toEqual([...THINKING_SETTINGS]);
+  /* The word a screen shows for a stored value reads it as the server does: anything not a setting is the default, Medium. */
+  expect(THINKING_SETTINGS.map(thinkingWord)).toEqual(["High", "Medium", "Low"]);
+  for (const stored of [undefined, null, "", "High", "ultra", MEDIUM, 3]) expect(thinkingWord(stored), String(stored)).toBe("Medium");
   for (const { model } of Object.values(ATOMIK_THINKING)) expect(isAtomikModel(model!), String(model)).toBe(true);
 });
 

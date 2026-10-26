@@ -5,11 +5,13 @@ import { requireTenant } from "@/lib/tenant";
 import { workbenchScopeProblem } from "@/lib/workbench/request-scope";
 import { storeChunk } from "@/lib/storage";
 import { abortUploadSession, markUploadChunkStored, reserveUploadChunk, UploadError, uploadFailure } from "@/lib/uploadReservations";
+import { uploadPurposeOf } from "@/lib/uploadCaps";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** Admission is durable and atomic before any chunk bytes reach storage. */
+/** Admission is durable and atomic before any chunk bytes reach storage. A chunk past its kind's cap (the form's `purpose`,
+ *  else the largest) is refused with 413, as the finish would refuse the file (lib/uploadCaps.ts). */
 export const POST = withTenant(async function POST(req: Request) {
   const got = await requireUser();
   if (got.response) return got.response;
@@ -21,7 +23,7 @@ export const POST = withTenant(async function POST(req: Request) {
     if (!(file instanceof File) || file.size < 1 || file.size > 4 * 1024 * 1024) throw new UploadError("Chunk size out of range.");
     const index = Number(form?.get("index"));
     const buf = Buffer.from(await file.arrayBuffer());
-    const claim = await reserveUploadChunk({ owner: got.user.id, session: String(form?.get("session") ?? ""), index, bytes: buf.length, sha256: createHash("sha256").update(buf).digest("hex") });
+    const claim = await reserveUploadChunk({ owner: got.user.id, session: String(form?.get("session") ?? ""), index, bytes: buf.length, sha256: createHash("sha256").update(buf).digest("hex"), purpose: uploadPurposeOf(form?.get("purpose")) });
     if (!claim.stored) {
       await storeChunk(claim.key, index, buf);
       await markUploadChunkStored(claim.key, index, claim.lease);

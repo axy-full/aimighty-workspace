@@ -27,7 +27,7 @@ export function PaletteAskCard({ intent, project, onClose, enterRef }: {
   const spendOff = useSampleWorkspace();
   const priced = intent.kind === "ask" && !spendOff;
   /* The free quote of a new turn in this project's thread (the same route and body the panel's composer quotes). */
-  const { quote, loading, error } = useAtomikQuote("/api/atomik", priced ? { text: intent.text, model: "auto", effort: "auto", projectId: production } : null);
+  const { quote, loading, error } = useAtomikQuote("/api/atomik", priced ? { text: intent.text, projectId: production } : null);
   const credits = quote?.estimateCredits ?? null;
   const button = askButton(intent, { credits, usd: quote?.estimateUsd ?? null, loading, error });
   const title = usePriceTitle(button.price);
@@ -39,7 +39,7 @@ export function PaletteAskCard({ intent, project, onClose, enterRef }: {
       <span className="ak-eyebrow ak-accent">Atomik</span>
       <strong className="ak-pcard-title">Ask Atomik: {intent.text}</strong>
       <div className="ak-pcard-foot">
-        <span className="ak-pcard-note" data-testid="palette-thinking-line">{spendOff && intent.kind === "ask" ? spendOff : button.reason ?? thinkingLine(intent, credits)}</span>
+        <span className="ak-pcard-note" data-testid="palette-thinking-line">{spendOff && intent.kind === "ask" ? spendOff : button.reason ?? thinkingLine(intent, credits, quote?.thinking)}</span>
         {spendOff === CHECK_LINE && intent.kind === "ask" ? <CheckAgain className="ak-link" /> : null}
         {spendOff && intent.kind === "ask" ? null : (
           <button type="button" className="ak-btn ak-btn-primary" disabled={button.disabled} title={title ?? (button.price?.kind === "free" ? "How-to answers are free" : undefined)}

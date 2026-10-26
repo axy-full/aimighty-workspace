@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -18,8 +18,8 @@ import { MODELS } from "../../lib/models";
  * The owner, 22 Oct 2026 (Amendment (iii) §E): "never disclose to the user the models and effort settings". Every route that runs
  * Atomik's thinking (and the Treatment writer) is driven here, quote and run, under the mocked engines (ENGINE_MOCK=1) and the
  * checked-in catalogue snapshot: no body a member is sent holds a thinking model id, a family-and-version name or an effort field.
- * Real temporary databases; nothing is sent anywhere and nothing is billed for real. The pickers' menus (GET /api/atomik,
- * GET /api/workbench/atomik and /development state) stay until the Thinking control replaces them, and are not driven here.
+ * Real temporary databases; nothing is sent anywhere and nothing is billed for real. The pickers are gone (3b-2); the menus' reads
+ * (GET /api/atomik, GET /api/workbench/atomik and /development state) are driven here too, and carry no model.
  */
 const dir = mkdtempSync(path.join(tmpdir(), "particl-no-model-disclosure-"));
 process.env.PLATFORM_DATABASE_URL = `file:${path.join(dir, "platform.db")}`;
@@ -94,11 +94,13 @@ const answer = async (res: Response) => ({ status: res.status, body: await res.j
 const SENT = { model: MEDIUM, effort: "high" };
 
 test("chat: the composer's list, the quote, the new chat, a turn, and the chat read back carry no thinking model or effort", async () => {
-  /* The composer's pickers draw only from GET /api/atomik's list, so with none sent they draw nothing. */
-  const provider = readFileSync("components/atomik/AtomikProvider.tsx", "utf8"), composer = readFileSync("components/atomik/ChatComposer.tsx", "utf8");
-  expect(provider).toContain("const models = useMemo(() => [...(index?.models?.featured ?? []), ...(index?.models?.rest ?? [])], [index]);");
-  expect(composer).toContain("{a.models.length > 0 && <ModelPicker");
-  expect(composer).toContain("{a.models.length > 0 && <EffortPicker");
+  /* The pickers are gone (3b-2): a person sets Thinking, never a model. No file draws a model or effort picker, and the composer, its
+     provider, the run dialog and the agent reads that fed them keep no list of thinking models to draw one from. */
+  expect(existsSync("components/atomik/ModelPicker.tsx")).toBe(false);
+  for (const file of ["components/atomik/AtomikProvider.tsx", "components/atomik/ChatComposer.tsx", "components/workbench/AtomikRunDialog.tsx",
+    "components/graphite/business/use-own-agent.ts", "components/workbench/use-production-jobs.ts"]) {
+    expect(readFileSync(file, "utf8"), file).not.toMatch(/ModelPicker|EffortPicker|setThinkingModel|setReasoningEffort|\bmodels\b/);
+  }
   const ws = await funded("chat");
   const index = await route("app/api/atomik/route.ts");
   const turn = await route("app/api/atomik/[id]/route.ts");
@@ -106,11 +108,23 @@ test("chat: the composer's list, the quote, the new chat, a turn, and the chat r
     const quoted = await answer(await index.POST!(json("/api/atomik", { quoteOnly: true, text: "Plan two shots at the market.", ...SENT })));
     expect(quoted.status).toBe(200);
     expectNothingDisclosed("POST /api/atomik quote", quoted.body);
+    /* The quote's head is the Thinking level it was quoted at, and a planning quote sends nothing else beside its price. */
+    expect(Object.keys(quoted.body).sort()).toEqual(["estimateCredits", "thinking"]);
+    expect(quoted.body.thinking).toBe("medium");
     const made = await answer(await index.POST!(json("/api/atomik", { projectId: null, ...SENT })));
     const id = String(made.body.id);
     const ctx = { params: Promise.resolve({ id }) };
     const quote = await answer(await turn.POST!(json(`/api/atomik/${id}`, { quoteOnly: true, text: "Plan two shots.", ...SENT }), ctx));
     expectNothingDisclosed("POST /api/atomik/[id] quote", quote.body);
+    expect(Object.keys(quote.body).sort()).toEqual(["estimateCredits", "thinking"]);
+    expect(quote.body.thinking).toBe("medium");
+    /* An admin's other level is what the next quote says, still a word and never the slot's model or effort. */
+    const { setSetting } = await import("../../lib/settings");
+    await setSetting("atomikThinking", "high", person.id);
+    const high = await answer(await turn.POST!(json(`/api/atomik/${id}`, { quoteOnly: true, text: "Plan two shots.", ...SENT }), ctx));
+    expect(high.body.thinking).toBe("high");
+    expectNothingDisclosed("POST /api/atomik/[id] quote at High", high.body);
+    await setSetting("atomikThinking", "medium", person.id);
     /* The composer's source (GET /api/atomik, read by components/atomik/AtomikProvider.tsx): no menu of thinking models, only whether one is served. */
     const listed = await answer(await index.GET!(new Request("https://particl.test/api/atomik")));
     expect(listed.status, JSON.stringify(listed.body).slice(0, 300)).toBe(200);
@@ -346,6 +360,24 @@ test("the chat list, Verify scorecards, statements, the usage ledger and the exp
     expect(JSON.parse(String(failedOutcome))).toMatchObject({ provider: "atomik", message: null });
     /* The whole export, every table: no thinking model's name, id or effort anywhere in it. */
     expectNothingDisclosed("the whole export", exported);
+  });
+});
+
+test("the settings read and an admin's Thinking save carry the level only: no thinking model, version or effort", async () => {
+  const ws = await funded("settings");
+  const settings = await route("app/api/settings/route.ts", { "@/lib/auth": { ...(await import("../../lib/auth")), withTenant: (fn: Handler) => fn,
+    requireUser: async () => ({ user: person }), requireAdmin: async () => ({ user: person }) } });
+  await inTenant(ws, async () => {
+    for (const level of ["high", "low", "medium"]) {
+      const saved = await answer(await settings.PATCH!(json("/api/settings", { atomikThinking: level }, "PATCH")));
+      expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+      expectNothingDisclosed(`PATCH /api/settings ${level}`, saved.body);
+      const read = await answer(await settings.GET!(new Request("https://particl.test/api/settings")));
+      expect(read.status).toBe(200);
+      expect((read.body.settings as Record<string, string>).atomikThinking).toBe(level);
+      /* The whole read a member is sent, the platform's defaults included: the level is there, no thinking model is. */
+      expectNothingDisclosed(`GET /api/settings at ${level}`, read.body);
+    }
   });
 });
 

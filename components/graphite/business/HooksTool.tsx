@@ -7,8 +7,6 @@ import { CardHead, Field, SaveLine, briefOf, changeBrief, useLatest, type OwnEdi
 import { useOwnAgent } from "./use-own-agent";
 import { SAVING_NOW } from '@/lib/workbench/save-then-continue';
 
-/** Only the suite agents' planners (Anthropic, OpenAI) run the Campaign agent (lib/workbench/atomik-server.ts). */
-export const SUITE_MODEL = /^(anthropic|openai)\//;
 const REQUEST_MAX = 4000;
 
 /**
@@ -28,7 +26,6 @@ export function HooksTool({ scope, editor, onOpen }: { scope: string; editor: Ow
   const [dialog, setDialog] = useState(false);
   const saved = Boolean(p.productionProjectId);
   const agent = useOwnAgent(scope, p.id, saved);
-  const models = agent.data?.models.filter((m) => SUITE_MODEL.test(m.id)) ?? [];
   /* The server sends no thinking models (never disclosed): whether one is served is `configured`. */
   const configured = Boolean(agent.data?.configured);
   const runs = (agent.data?.jobs ?? []).filter((job) => job.suite === "moleculr" || job.plan?.suiteAgent?.suite === "moleculr").slice(0, 4);
@@ -106,7 +103,7 @@ export function HooksTool({ scope, editor, onOpen }: { scope: string; editor: Ow
       </section>
       <SaveLine editor={editor} testId="hooks-save" />
       {dialog && saved ? (
-        <AtomikRunDialog key={`${scope}:${p.id}:hooks`} approximate scope={scope} project={p} models={models}
+        <AtomikRunDialog key={`${scope}:${p.id}:hooks`} approximate scope={scope} project={p}
           target={{ suite: "moleculr", request: `[moleculr] ${asked.trim()}`, role: "marketing", model: "auto", effort: "auto", depth: "Considered", refs: [] }}
           onSave={editor.ensureSaved} onClose={() => setDialog(false)} onQueued={() => { setDialog(false); void agent.refresh(); }} />
       ) : null}
