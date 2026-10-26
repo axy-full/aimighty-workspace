@@ -41,9 +41,11 @@ function withGeminiSafety<P extends { providerOptions?: Record<string, Record<st
   return { ...params, providerOptions: { ...params.providerOptions, google: { ...params.providerOptions?.google, ...safety.google }, vertex: { ...params.providerOptions?.vertex, ...safety.vertex } } } as P;
 }
 /** One provider's own SDK, on its own key, own origin and the exact mapped id.
- * The key is read here, never taken from the caller's headers. */
-function directLanguageModel(vendor: DirectVendor, model: string, fetcher: typeof fetch): LanguageModel {
-  const id = directModelId(model), apiKey = directKey(vendor);
+ * The key is read here (or is a caller's own key, passed in explicitly), never taken from the caller's headers. */
+function directLanguageModel(vendor: DirectVendor, model: string, fetcher: typeof fetch, ownKey?: string): LanguageModel {
+  /* A caller's own key replaces the platform's; the platform's key is then not read at all. */
+  if (ownKey !== undefined && !ownKey) throw new Error('The caller key for this direct language door is empty; nothing was sent.');
+  const id = directModelId(model), apiKey = ownKey ?? directKey(vendor);
   const settings = { apiKey, baseURL: DIRECT_BASE_URL[vendor], fetch: directFetch(vendor, fetcher) };
   const native = vendor === 'anthropic' ? createAnthropic(settings).languageModel(id)
     : vendor === 'google' ? createGoogleGenerativeAI(settings).languageModel(id)
@@ -61,16 +63,18 @@ function directLanguageModel(vendor: DirectVendor, model: string, fetcher: typeo
 /** Provider choice is made once before the first SDK call. A failed direct
  * attempt never falls back to Gateway or another provider, and never silently
  * changes model IDs. Callers pass `maxRetries: 0`. */
-export function languageModel(model: string, options: { auth: Record<string, string>; fetch?: typeof fetch }): LanguageModel {
+export function languageModel(model: string, options: { auth: Record<string, string>; fetch?: typeof fetch; apiKey?: string }): LanguageModel {
   assertTextProvider(model, options.auth);
   const fetcher = options.fetch ?? recoveryFetch;
   const route = textRoute(model);
+  /* A caller's own key is for a direct door only: it never reaches OpenAI or the gateway. */
+  if (options.apiKey !== undefined && !isDirectRoute(route)) throw new Error('A caller key is accepted only for a direct language door; nothing was sent.');
   if (route === 'openai') {
     const openai = createOpenAI({ apiKey: directOpenAIKey(model)!, baseURL: OPENAI_BASE(), fetch: openAIFetch(fetcher) });
     const selected = usesOpenAIResponses(model) ? openai.responses(openAIModelId(model)) : openai.chat(openAIModelId(model));
     return wrapLanguageModel({ model: selected, middleware: { transformParams: async ({ params }) => ({ ...params, providerOptions: { ...params.providerOptions, openai: { ...params.providerOptions?.openai, store: false } } }) } });
   }
-  if (isDirectRoute(route)) return directLanguageModel(route, model, fetcher);
+  if (isDirectRoute(route)) return directLanguageModel(route, model, fetcher, options.apiKey);
   const auth = { ...options.auth }; delete auth[TEXT_PROVIDER_HEADER];
   const token = auth.Authorization?.replace(/^Bearer\s+/i, '');
   if (!token) throw new Error('The selected language provider is not connected for this workspace.');
