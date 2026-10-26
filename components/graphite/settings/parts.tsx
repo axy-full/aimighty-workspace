@@ -93,6 +93,9 @@ export function Note({ ok, text, testId }: { ok: boolean; text: string; testId?:
 /** A fold whose open state starts from the address (`open=`), then follows the person. */
 export function Folded({ name, open, label, meta, children }: { name: SettingsFold; open: SettingsFold | null; label: string; meta?: ReactNode; children: ReactNode }) {
   const [shown, setShown] = useState(open === name);
+  /* A link to this fold from inside the same section (Tools › Thinking › Open) changes only the address: the fold opens then too. */
+  const [asked, setAsked] = useState(open);
+  if (asked !== open) { setAsked(open); if (open === name) setShown(true); }
   return <Fold label={label} meta={meta} open={shown} onToggle={() => setShown((v) => !v)} testId={`settings-fold-${name}`}>{children}</Fold>;
 }
 

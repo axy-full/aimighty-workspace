@@ -42,6 +42,8 @@
 .ak-line { margin: 0; font-size: 13px; line-height: 1.5; color: var(--gx-text-2); overflow-wrap: anywhere; }
 .ak-problem { color: var(--gx-failed-text); }
 .ak-note { margin: 6px 2px 0; font-size: 12px; line-height: 1.4; color: var(--gx-text-2); }
+/* The quote's head, over the box: "Thinking · Medium". */
+.ak-note.ak-thinking { margin: 0 2px 6px; }
 
 .ak-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .ak-btn {

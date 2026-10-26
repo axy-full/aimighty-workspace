@@ -2,7 +2,6 @@
 import { PROJECT_LIMITS, limitText } from "@/lib/workbench/project-limits";
 import {useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {studioRequest} from './GenerationDialog';
-import type {ThinkingModel} from '@/components/atomik/ModelPicker';
 import type {Project,Plan} from '@/lib/workbench/studio';
 import {activeMediaJob,recoverMediaAssets,type MediaJob} from '@/lib/workbench/job-recovery';
 import {isSavedProject,saveMessage} from '@/lib/workbench/save-then-continue';
@@ -14,7 +13,6 @@ const scopeOf=(p:Project,requestScope?:string)=>(requestScope?requestScope+':':'
 export function useProductionJobs(project:Project,enabled:boolean,change:(fn:(p:Project)=>Project,remember?:boolean)=>void,requestScope?:string){
  const [media,setMedia]=useState<{scope:string;jobs:MediaJob[]}>({scope:'',jobs:[]});
  const [atomik,setAtomik]=useState<{scope:string;jobs:AtomikJob[]}>({scope:'',jobs:[]});
- const [models,setModels]=useState<{scope:string;items:ThinkingModel[]}>({scope:'',items:[]});
  const [errors,setErrors]=useState<{scope:string;atomik?:string;media?:string}>({scope:''});
  const ref=useRef(project),identity=useRef(requestScope);useLayoutEffect(()=>{ref.current=project;identity.current=requestScope},[project,requestScope]);
  const epoch=useRef(0),inFlight=useRef<{scope:string;abort:AbortController;promise:Promise<void>}|null>(null);
@@ -32,9 +30,9 @@ export function useProductionJobs(project:Project,enabled:boolean,change:(fn:(p:
    /* A project not saved yet has nothing on the server to read: it saves itself, and this reads once it has (productionProjectId arrives with that save). */
    if(!isSavedProject(p)){if(current()){setAtomik({scope,jobs:[]});report('atomik');}return;}
    try{
-    const result=await studioRequest<{models:ThinkingModel[];jobs:AtomikJob[]}>('/api/workbench/atomik?projectId='+encodeURIComponent(p.id),requestOptions);
+    const result=await studioRequest<{jobs:AtomikJob[]}>('/api/workbench/atomik?projectId='+encodeURIComponent(p.id),requestOptions);
     if(!current())return;
-    setModels({scope,items:result.models??[]});setAtomik({scope,jobs:result.jobs??[]});
+    setAtomik({scope,jobs:result.jobs??[]});
     const plans=(result.jobs??[]).filter(j=>j.status==='succeeded'&&j.plan&&!j.plan.astraBlender&&!j.plan.astraNative).map(j=>j.plan!);
     if(plans.some(plan=>!ref.current.plans.some(a=>a.id===plan.id)))change(old=>scopeOf(old,requestScope)===scope?{...old,plans:[...old.plans,...plans.filter(plan=>!old.plans.some(a=>a.id===plan.id))].slice(-100)}:old,false);
     report('atomik');
@@ -80,5 +78,5 @@ export function useProductionJobs(project:Project,enabled:boolean,change:(fn:(p:
   return()=>{clearInterval(timer);inFlight.current?.abort.abort();inFlight.current=null;};
  },[project.id,project.productionProjectId,mappingKey,enabled,refresh]);
  const scope=scopeOf(project,requestScope);
- return {mediaJobs:media.scope===scope?media.jobs:[],atomikJobs:atomik.scope===scope?atomik.jobs:[],models:models.scope===scope?models.items:[],error:errors.scope===scope?[errors.atomik,errors.media].filter(Boolean).join(' '):'',refresh};
+ return {mediaJobs:media.scope===scope?media.jobs:[],atomikJobs:atomik.scope===scope?atomik.jobs:[],error:errors.scope===scope?[errors.atomik,errors.media].filter(Boolean).join(' '):'',refresh};
 }

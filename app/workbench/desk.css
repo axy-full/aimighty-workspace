@@ -96,9 +96,6 @@
 .ps .atomik-reasoning-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:9px;padding-top:9px;border-top:1px solid var(--ps-line)}
 .ps .atomik-reasoning-controls .choice{height:32px;min-width:0;padding:0 9px;font-size:12px;gap:5px;background:var(--ps-raised)}
 .ps .atomik-reasoning-controls .choice svg{width:12px;height:12px}
-.ps .atomik-option-field{flex:1;min-width:160px}
-.ps .atomik-option-field>label{display:block;margin-bottom:6px}
-.ps .atomik-option-model{flex-basis:100%}
 @media(max-width:760px){.ps .atomik-reasoning-controls .choice{height:38px}.ps .atomik-reasoning-controls{gap:8px}}
 /* Touch on wide screens (844×390 landscape phones, tablets): 44 px canvas targets without changing the pointer layout. */
 @media (min-width:760px) and (pointer:coarse){.ps .ng-canvas-bottom .ng-tool,.ps .ng-zoom>button:not(.ng-tool){min-width:44px;height:44px}.ps .ng-port::before{inset:-16px}.ps .ng-node-menu{width:44px;height:44px}}

@@ -383,7 +383,8 @@ test("the Atomik sheet, a request: Ask · up to N cr from the server, sent with 
   await expect(send).toHaveText(/^Ask · up to \d+ cr$/, { timeout: 30_000 });
   await expect(send).toHaveAttribute("title", /^up to \$[\d.,]+$|^\$[\d.,]+$/);
   const shown = Number((await send.textContent())!.match(/up to (\d+) cr/)![1]);
-  await expect(page.getByTestId("phone-atomik-cost")).toHaveText(/^Atomik’s thinking may cost up to \d+ cr · it plans and prices first; nothing is spent without your approval$/);
+  /* The quote's head: the Thinking level it was quoted at (a new workspace's is Medium), never a model or an effort. */
+  await expect(page.getByTestId("phone-atomik-cost")).toHaveText(new RegExp(`^Thinking · Medium · up to ${shown} cr · it plans and prices first; nothing is spent without your approval$`));
   expect(atomik.turns, "nothing is sent before the press").toEqual([]);
   await floors(page, "Atomik sheet, priced");
   await shot(page, info.project.name, "atomik-ask-priced");

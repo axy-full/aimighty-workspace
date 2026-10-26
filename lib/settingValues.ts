@@ -39,6 +39,16 @@ export const THINKING_OPTIONS: readonly (readonly [string, string])[] = [
   ["low", "Low"],
 ];
 
+/** The word a person reads for a stored Thinking value: High, Medium or Low; Medium (the default) for anything else, as the server reads it. */
+export function thinkingWord(value: unknown): string {
+  return THINKING_OPTIONS.find(([v]) => v === value)?.[1] ?? "Medium";
+}
+
+/** A planning quote's head, "Thinking · Medium": only for a level the server sent with the quote (never a guess), else null. */
+export function thinkingHead(level: unknown): string | null {
+  return THINKING_OPTIONS.some(([v]) => v === level) ? `Thinking · ${thinkingWord(level)}` : null;
+}
+
 const allowed = (options: readonly (readonly [string, string])[], value: unknown) => options.some(([v]) => v === String(value));
 
 /** A whole number of credits from 1 up to a million, as a person types it (digits only). */

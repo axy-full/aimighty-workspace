@@ -8,6 +8,7 @@ import { cleanAttachments } from "@/lib/attachments";
 import { effectiveRules } from "@/lib/rules";
 import { writerRulesByScope } from "@/lib/platformLayer";
 import { paidTextFailure, atomikQuoteResponse, paidTextQuoteScopeFailure } from "@/lib/paidText";
+import { workspaceThinking } from "@/lib/atomikThinking";
 import { menuFor } from "@/lib/catalog";
 import { plannerMemoryText } from "@/lib/atomikMemory";
 import { plannerInputs, plannerPresetsStale, refreshPlannerPresets } from "@/lib/atomikLibrary";
@@ -61,13 +62,14 @@ export const POST = withTenant(async function POST(req: NextRequest) {
     /* The project's library and presets for library steps, read as the turn will read them. */
     const inputs = await plannerInputs(auth.user.id, projectId);
     const viewOnly = Boolean(readProject && !projectId);
-    /* The model and effort are the workspace's Thinking setting (lib/atomikThinking.ts): a sent model or effort is not a choice, and is ignored. */
+    /* The model and effort are the workspace's Thinking setting (lib/atomikThinking.ts): a sent model or effort is not a choice, and is ignored.
+       The quote's head names the level it was quoted at (a read of the same setting), never the model. */
     return atomikQuoteResponse(await runTurn(null, { quoteOnly: true, projectId, viewOnly,
       context: [viewOnly ? VIEW_ONLY_INSTRUCTION : "", await projectContext(readProject)].filter(Boolean).join("\n\n"), rules: writerRulesByScope(await effectiveRules()),
       /* The team's memory, read as the turn will read it: the quote prices the same message. */
       memory: await plannerMemoryText({ projectId: readProject, query: text, viewer: got.user.id }).catch(() => ""),
       library: inputs.library, presets: inputs.presets,
-      userMessage: { text, attachments: cleanAttachments(body.attachments) } }));
+      userMessage: { text, attachments: cleanAttachments(body.attachments) } }), { thinking: await workspaceThinking() });
   }
   /* The sample workspace has no Atomik chat: its turns would spend. A quote still answers. */
   { const off = await sampleWorkspaceOff(); if (off) return off; }

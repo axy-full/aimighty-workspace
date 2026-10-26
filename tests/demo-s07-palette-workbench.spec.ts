@@ -194,7 +194,8 @@ test("a question is free; a request shows what thinking may cost, from the serve
   await expect(card.getByTestId("palette-ask")).toHaveText(/^Ask · up to \d+ cr$/, { timeout: 15_000 });
   await expect(card.getByTestId("palette-ask")).toHaveAttribute("data-spend", "priced");
   await expect(card.getByTestId("palette-ask")).toHaveAttribute("data-spend-price", /^up to \d+ cr$/);
-  await expect(card.getByTestId("palette-thinking-line")).toHaveText(/^Atomik’s thinking may cost up to \d+ cr · it plans and prices first; nothing is spent without your approval$/);
+  /* The quote's head: the Thinking level it was quoted at (a new workspace's is Medium), never a model or an effort. */
+  await expect(card.getByTestId("palette-thinking-line")).toHaveText(/^Thinking · Medium · up to \d+ cr · it plans and prices first; nothing is spent without your approval$/);
   await noSideways(page);
   await shot(page, "palette-ask", info);
 });

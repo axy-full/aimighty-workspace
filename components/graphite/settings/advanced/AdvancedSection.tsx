@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { MODELS, displayModelName, isOffered } from "@/lib/models";
 import { DEFAULT_ENHANCER, ENHANCER_LABEL, ENHANCER_NOTE, ENHANCER_PROVIDERS, isEnhancerProvider, type EnhancerProvider } from "@/lib/shell/enhancer";
-import { EDIT_FORMAT_OPTIONS, ENHANCE_DEFAULT_OPTIONS } from "@/lib/settingValues";
+import { EDIT_FORMAT_OPTIONS, ENHANCE_DEFAULT_OPTIONS, THINKING_OPTIONS, thinkingWord } from "@/lib/settingValues";
 import { requestAccountRefresh } from "@/lib/workspace/data";
 import { useSession } from "@/lib/session";
 import { useShell } from "@/lib/shell/state";
@@ -18,11 +18,12 @@ import { PromptRules } from "./PromptRules";
 /**
  * Settings › Advanced (README § 3.5; Workspace's Engines and General tabs, Atomik's Models and Tools, § 1.2): three folds.
  *
- *  - Models: thinking for planning, engines for output. The thinking model is chosen per request in Atomik's panel (Auto
- *    starts there), so its row opens the panel. The default engines and the prompt enhancer are workspace settings an admin
- *    saves on PATCH /api/settings, with a toast that has Undo. Engines lists availability on Particl's own keys.
+ *  - Models: engines for output. The default engines and the prompt enhancer are workspace settings an admin saves on
+ *    PATCH /api/settings, with a toast that has Undo. Engines lists availability on Particl's own keys. Atomik's thinking is
+ *    never a model here: it is the Workspace fold's Thinking (High · Medium · Low), and no model or effort is named.
  *  - Tools: what Atomik reaches, each with where it opens.
- *  - Workspace: the name (the owner's), prompt rules, the container an edit comes back in, and the export (the owner's).
+ *  - Workspace: the name (the owner's), Thinking (`atomikThinking`, an admin's; lib/atomikThinking.ts), prompt rules, the
+ *    container an edit comes back in, and the export (the owner's).
  *
  * Nothing here spends or prices. The design's "Depth" row is left out: the code has no such setting.
  */
@@ -61,7 +62,6 @@ const ENGINES = (kind: "video" | "image") => MODELS.filter((m) => m.kind === kin
 
 function Models({ open }: { open: SettingsFold | null }) {
   const session = useSession();
-  const shell = useShell();
   const admin = session.role === "admin" || session.role === "owner";
   const settings = useRead<Settings>("/api/settings");
   const keys = useRead<Keys>("/api/workspaces/keys");
@@ -88,12 +88,8 @@ function Models({ open }: { open: SettingsFold | null }) {
     );
   };
   return (
-    <Folded name="models" open={open} label="Models" meta="thinking for planning · engines for output">
+    <Folded name="models" open={open} label="Models" meta="engines for output">
       {settings.error ? <Problem text={settings.error} onRetry={() => void settings.read()} /> : null}
-      <Row name="Thinking model" line="Claude, OpenAI and Grok · Auto starts here" value="Auto" testId="settings-thinking">
-        <Btn onClick={() => shell.openAtomik("panel")} testId="settings-thinking-change">Change</Btn>
-      </Row>
-      <Row name="Reasoning effort" line="Chosen for each request" value="Auto" testId="settings-effort" />
       {engineSelect("defaultVideoModel", "video", "Default video engine")}
       {engineSelect("defaultImageModel", "image", "Default image engine")}
       <Row name="Prompt enhancer" line={`${ENHANCER_NOTE[enhancer]} A local enhancement costs 1 cr.`} testId="settings-enhancer">
@@ -162,6 +158,8 @@ function Workspace({ account, open }: { account: WorkspaceAccount | null; open: 
   const [renameNote, setRenameNote] = useState<{ ok: boolean; text: string } | null>(null);
   const typed = (title ?? name).trim();
   const format = settings.data ? (settings.data.settings.editOutputFormat ?? settings.data.defaults.editOutputFormat) === "mov" ? "mov" : "mp4" : null;
+  /* Thinking as the server reads it (lib/atomikThinking.ts › workspaceThinking): a stored value it does not know is Medium. */
+  const thinking = settings.data ? THINKING_OPTIONS.find(([id]) => id === (settings.data!.settings.atomikThinking ?? settings.data!.defaults.atomikThinking))?.[0] ?? "medium" : null;
   const rename = async () => {
     if (renaming || !typed || typed === name) return;
     setRenaming(true); setRenameNote(null);
@@ -172,7 +170,7 @@ function Workspace({ account, open }: { account: WorkspaceAccount | null; open: 
     setRenameNote({ ok: true, text: "Renamed." });
   };
   return (
-    <Folded name="workspace" open={open} label="Workspace" meta="name, prompt rules, edit format, export">
+    <Folded name="workspace" open={open} label="Workspace" meta="name, Thinking, prompt rules, edit format, export">
       <Row name="Workspace name" line={owner ? undefined : "The owner names the workspace."} testId="settings-ws-name">
         {owner ? (
           <form className="gs-capform" onSubmit={(e) => { e.preventDefault(); void rename(); }}>
@@ -182,6 +180,17 @@ function Workspace({ account, open }: { account: WorkspaceAccount | null; open: 
         ) : <span className="gs-row-v">{name}</span>}
       </Row>
       {renameNote ? <Note ok={renameNote.ok} text={renameNote.text} testId="settings-ws-note" /> : null}
+      {/* How hard Atomik thinks, for every production here: an admin's, like every workspace setting (PATCH /api/settings answers anyone else 403). */}
+      <Row name="Thinking" line="Default for new productions · admins only" value={admin || !thinking ? undefined : thinkingWord(thinking)} testId="settings-thinking">
+        {admin ? (
+          <span className="gs-choice" role="radiogroup" aria-label="Thinking">
+            {THINKING_OPTIONS.map(([id, label]) => (
+              <button key={id} type="button" role="radio" aria-checked={thinking === id} className="gs-btn" disabled={busy || !thinking}
+                onClick={() => { if (thinking && id !== thinking) void save({ atomikThinking: id }, { atomikThinking: thinking }, `Thinking: ${label}.`); }} data-testid={`settings-thinking-${id}`}>{label}</button>
+            ))}
+          </span>
+        ) : null}
+      </Row>
       <Row name="Edit & extend container" line="What an edit or an extension comes back in" testId="settings-format">
         <span className="gs-choice" role="radiogroup" aria-label="Edit and extend container">
           {EDIT_FORMAT_OPTIONS.map(([id, label]) => (
