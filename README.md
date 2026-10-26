@@ -176,9 +176,9 @@ encoded payload would exceed 64 MB the render is blocked with a message —
 
 ## Deploy
 
-Vercel + Turso + Vercel Blob. Set `ARK_API_KEY`, `TURSO_DATABASE_URL`,
-`TURSO_AUTH_TOKEN`, `BLOB_READ_WRITE_TOKEN`, then put Cloudflare Access in
-front of the domain.
+Self-hosted: a container built from `ops/selfhost/Dockerfile`, a Turso database and an R2 bucket.
+Set `ARK_API_KEY`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `STORAGE_BACKEND=r2` and the `R2_*`
+settings (see Deployment below), then put Cloudflare Access in front of the domain.
 
 ## Look
 
@@ -193,30 +193,27 @@ titles, Inter Tight for body, JetBrains Mono for every number and micro-label.
 
 ## Deployment
 
-Runs on Vercel in **Mumbai (`bom1`)**, pinned in `vercel.json` — colocated
-with the team and with the Blob store, which is what the hot path touches:
-media is proxied through the app on every view, whereas ModelArk is called
-once per render. Create the Blob store in the same region. The US default
-would bounce everything across two oceans for nothing.
+Runs as one container on its own server (`ops/selfhost/Dockerfile`; the staging, switch-day and rollback steps are in
+`docs/selfhost-test.md`). The app talks to ModelArk once per render, so the hot path is the database and the media store:
+media is proxied through the app on every view.
 
-Required environment variables in Vercel:
+Required environment variables:
 
 | Variable | Where it comes from |
 |---|---|
 | `ARK_API_KEY` | BytePlus console → API key management |
 | `TURSO_DATABASE_URL` | Turso database |
 | `TURSO_AUTH_TOKEN` | Turso database |
-| `BLOB_READ_WRITE_TOKEN` | injected automatically when a Blob store is attached |
+| `STORAGE_BACKEND` | `r2` |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | Cloudflare R2 (a private bucket and an API token for it); `R2_ENDPOINT` only if the deployment sets one |
 | `CRON_SECRET` | any long random string; authenticates `/api/cron/sync` and the app's own `/api/worker` (native background dispatch, `docs/native-dispatch.md`) |
 | `APP_ORIGIN` | the canonical HTTPS origin, e.g. `https://www.particl.app`; where `/api/worker` is reached |
 
-Inngest is optional: without `DISPATCH_MODE=inngest` and its two keys, background
-work is dispatched natively on Vercel.
+Reconciliation runs from a scheduled task on the server, every 10 minutes: `node ops/selfhost/cron-sync.mjs` inside the app
+container (it calls `/api/cron/sync` with `CRON_SECRET`).
 
-With `BLOB_READ_WRITE_TOKEN` set, uploads go browser → Blob directly and the
-database and media live in the cloud. Without it everything falls back to the
-local `.data/` directory, which is what local development uses. No code
-changes between the two.
+Inngest is optional: without `DISPATCH_MODE=inngest` and its two keys, background work is dispatched natively.
 
-**Production starts empty.** The local database doesn't travel; the first
-person to open the deployed site creates the admin account there.
+With `STORAGE_BACKEND=r2` and the `R2_*` settings, uploads go to R2 and the database and media live in the cloud. Without
+them everything falls back to the local `.data/` directory, which is what local development uses. No code changes between
+the two.
