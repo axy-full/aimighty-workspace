@@ -167,12 +167,29 @@ const BRIEF_FLOOR: readonly FloorRow[] = [
  */
 export const CONSENT_FROM_BRIEF: Prefill = Object.freeze({ from: "real", values: Object.freeze({ yes_consent: "yes", yes_not_yet: "not_yet" }) });
 
-/** G, Brief, ASKS: the rows it lists that are not on the floor, in its order. Atomik asks above the floor in its own words. */
+/**
+ * Above the floor. G's ASKS rows first, in its order: subject, message and audience are Atomik's to ask in its own words. Then the
+ * conversation (owner, 25 Oct 2026; SOW v2 §9 Brief): tonality, the hook, the penny-drop moment, montage or not, high speed or not
+ * and the moments, in his order, each one question in the copy table's words. Tonality's bank is his six words; montage and speed
+ * offer both sides; the hook, the penny drop and the moments have no bank, since their likely answers are this film's (Atomik's
+ * proposals). None is on the floor: nothing here moves money, and any of them may be skipped.
+ */
 const BRIEF_ABOVE_FLOOR: readonly AboveFloorRow[] = [
   { key: "q:subject", floor: false, step: "brief" },
   { key: "q:message", floor: false, step: "brief" },
   { key: "q:audience", floor: false, step: "brief" },
-  { key: "q:tone", floor: false, step: "brief" },
+  {
+    key: "q:tone", floor: false, step: "brief", question: "tone",
+    bank: [
+      { id: "warm", copy: "toneWarm" }, { id: "cold", copy: "toneCold" }, { id: "standoffish", copy: "toneStandoffish" },
+      { id: "deadpan", copy: "toneDeadpan" }, { id: "over_the_top", copy: "toneOverTheTop" }, { id: "emotional", copy: "toneEmotional" },
+    ],
+  },
+  { key: "q:hook", floor: false, step: "brief", question: "hook" },
+  { key: "q:penny_drop", floor: false, step: "brief", question: "pennyDrop" },
+  { key: "q:montage", floor: false, step: "brief", question: "montage", bank: [{ id: "montage", copy: "montageYes" }, { id: "no_montage", copy: "montageNo" }] },
+  { key: "q:high_speed", floor: false, step: "brief", question: "highSpeed", bank: [{ id: "high_speed", copy: "highSpeedYes" }, { id: "normal_speed", copy: "highSpeedNo" }] },
+  { key: "q:moments", floor: false, step: "brief", question: "moments" },
 ];
 
 function deepFreeze<T>(value: T): T {

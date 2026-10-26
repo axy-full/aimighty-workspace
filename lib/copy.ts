@@ -50,6 +50,8 @@ export const BUTTONS = {
   retry: "Retry",
   buy: "Buy",
   rename: "Rename",
+  /** A conversation question passed over (owner, 25 Oct 2026: "any of them skippable"). */
+  skip: "Skip",
   decideForMe: "Decide for me",
 } as const;
 
@@ -186,6 +188,26 @@ export const QUESTIONS = {
   ceilingOther: "Other",
   /** "No limit" as it reads inside "I assumed … · Change". */
   noLimit: "no limit",
+  /**
+   * The conversation above the floor (owner, 25 Oct 2026; SOW v2 §9 Brief): the film in a filmmaker's words, one question per
+   * card. Tonality's chips are the owner's own words; the person's word goes in the field.
+   */
+  tone: "What's the tone?",
+  toneWarm: "Warm",
+  toneCold: "Cold",
+  toneStandoffish: "Standoffish",
+  toneDeadpan: "Deadpan",
+  toneOverTheTop: "Over the top",
+  toneEmotional: "Emotional",
+  hook: "What's the hook?",
+  pennyDrop: "Where does the penny drop?",
+  montage: "Montage, or not?",
+  montageYes: "Montage",
+  montageNo: "No montage",
+  highSpeed: "High speed, or not?",
+  highSpeedYes: "High speed",
+  highSpeedNo: "Normal speed",
+  moments: "Which moments must land?",
   /**
    * A row read in place of its question (R2, H; owner, 25 Oct 2026, answer 3): "I assumed Hindi · Change" until a person confirms
    * it, "from you · Change" once they have, "from the brief · Change" for a row a file answered.

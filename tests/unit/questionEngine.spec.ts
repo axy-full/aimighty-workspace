@@ -18,7 +18,9 @@ import { BRIEF_FIXTURES, fixture, type BriefFixture } from "./questionBriefFixtu
 const WS_A = "ws_question_a";
 const WS_B = "ws_question_b";
 const FLOOR_KEYS = ["kind", "length", "plays", "language", "real", "material", "ceiling"];
-const ABOVE_KEYS = ["q:subject", "q:message", "q:audience", "q:tone"];
+const ABOVE_KEYS = ["q:subject", "q:message", "q:audience", "q:tone", "q:hook", "q:penny_drop", "q:montage", "q:high_speed", "q:moments"];
+/* Atomik's picks for the conversation rows the owner added on 25 Oct 2026 (SOW v2 §9 Brief): "Decide for me" closes them too. */
+const CONVERSATION = { "q:hook": "h", "q:penny_drop": "p", "q:montage": "montage", "q:high_speed": "normal_speed", "q:moments": "m" };
 
 const engineFor = (f: BriefFixture, workspaceId = WS_A, checklist: Checklist = AD_FILM_BRIEF) =>
   questionEngine(checklist, inMemoryRecord(workspaceId, `prod_${f.id}`, f.read));
@@ -259,7 +261,7 @@ test("person-only answers: words the caller read never set the spend limit or co
 });
 
 test("Decide for me (answers 3 and 6): every open row at this step closed, floor and above, each 'I assumed … · Change'; the spend limit never written", () => {
-  const picks = { "q:subject": "a ceramic mug", "q:message": "it keeps tea hot", "q:audience": "office workers", "q:tone": "calm" };
+  const picks = { "q:subject": "a ceramic mug", "q:message": "it keeps tea hot", "q:audience": "office workers", "q:tone": "calm", ...CONVERSATION };
   for (const f of BRIEF_FIXTURES) {
     const start = engineFor(f);
     const wasOpen = start.rows.filter((row) => row.state === "open").map((row) => row.key);
@@ -345,7 +347,7 @@ test("deterministic: the same brief and the same answers give the same marks, or
     BRIEF_FIXTURES.map((f) => {
       const start = engineFor(f);
       const { asked, end } = interview(start);
-      const decided = start.decideForMe({ kind: "ad_film", "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t" });
+      const decided = start.decideForMe({ kind: "ad_film", "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t", ...CONVERSATION });
       return JSON.stringify({ rows: start.rows, open: start.open, next: start.next(), asked, end: end.rows, writes: end.writes, decided: decided.writes });
     });
   const first = run();
@@ -357,7 +359,7 @@ test("tenant isolation: two workspaces' engines share nothing, and a row from an
   const a = engineFor(fixture("menu-only"), WS_A);
   const b = engineFor(fixture("menu-only"), WS_B);
   const bBefore = JSON.stringify(b.rows);
-  const aAfter = a.answer("length", "60s").answer("material", "nothing").decideForMe({ "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t" });
+  const aAfter = a.answer("length", "60s").answer("material", "nothing").decideForMe({ "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t", ...CONVERSATION });
   expect(JSON.stringify(b.rows)).toBe(bBefore);
   expect(b.open).toContain("length");
   expect(aAfter.writes.length).toBeGreaterThan(0);
@@ -419,7 +421,7 @@ test("answer 1, the order: by what changes the result or the price most, determi
   const two = questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", reversed));
   expect(two.open).toEqual(one.open);
   expect(two.next()).toEqual(one.next());
-  const picks = { kind: "ad_film", "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t" };
+  const picks = { kind: "ad_film", "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t", ...CONVERSATION };
   const picksReversed = Object.fromEntries(Object.entries(picks).reverse());
   expect(two.decideForMe(picksReversed).writes).toEqual(one.decideForMe(picks).writes);
   const menu = engineFor(fixture("menu-only"));
@@ -458,7 +460,7 @@ test("answer 4: the Brief's \"real\" pre-fills Elements' consent; the engine nev
   for (const real of ["yes_consent", "yes_not_yet", "no_one", "product_only"]) {
     expect(engineFor(fixture("menu-only")).answer("real", real).writes.map((w) => w.key)).toEqual(["real"]);
   }
-  expect(engineFor(fixture("nothing")).decideForMe({ kind: "ad_film", "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t" }).writes.some((w) => w.key === "consent")).toBe(false);
+  expect(engineFor(fixture("nothing")).decideForMe({ kind: "ad_film", "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t", ...CONVERSATION }).writes.some((w) => w.key === "consent")).toBe(false);
   /* Only the person's own direct answer sets it. */
   expect(atElements.answer("consent", "yes").rows[0]).toMatchObject({ state: "known", value: "yes", source: "said" });
 });
@@ -478,7 +480,7 @@ test("answer 5: the spend limit's platform default is No limit, a house default 
   expect(house.next()).toMatchObject({ key: "ceiling", pills: [{ id: "none", lit: true }, { id: "production", lit: false }] });
   expect(house.writes).toEqual([]);
   /* "Decide for me" over it writes no limit either. */
-  expect(house.decideForMe({ "q:tone": "t" }).writes.some((w) => w.key === "ceiling")).toBe(false);
+  expect(house.decideForMe({ "q:tone": "t", ...CONVERSATION }).writes.some((w) => w.key === "ceiling")).toBe(false);
 
   /* The proposal mechanism on its own, on a person-only row with two pills (not a spend limit): a house default it lists in
      `proposedBy` lights its pill; one it does not list, and a workspace default, never do. */
@@ -491,11 +493,11 @@ test("answer 5: the spend limit's platform default is No limit, a house default 
   expect(card({}, two, { stop: "b" })).toBe("a");
   /* A workspace default for the spend limit is ignored, and "Decide for me" still writes nothing to it. */
   const wsDefault = questionEngine(AD_FILM_BRIEF, inMemoryRecord(WS_A, "p", fixture("menu-only").read), { workspaceId: WS_A, values: { ceiling: "none" } });
-  expect(wsDefault.decideForMe({ "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t" }).writes.some((w) => w.key === "ceiling")).toBe(false);
+  expect(wsDefault.decideForMe({ "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t", ...CONVERSATION }).writes.some((w) => w.key === "ceiling")).toBe(false);
 });
 
 test("answer 6: after Decide for me the spend limit reads \"I assumed no limit · Change\" and is not asked again, with nothing written", () => {
-  const decided = engineFor(fixture("synthetic-d11-deck")).decideForMe({ "q:tone": "warm" });
+  const decided = engineFor(fixture("synthetic-d11-deck")).decideForMe({ "q:tone": "warm", ...CONVERSATION });
   expect(decided.writes.find((w) => w.key === "ceiling")).toBeUndefined();
   expect(decided.record.get("ceiling")).toBeNull();
   /* A later session over the record (the next turn, or the Elements step coming back to the Brief) reads it the same way. */
@@ -521,7 +523,7 @@ test("answer 7: Hindi ★ is the platform default; the workspace default overrid
     expect(q?.key).toBe("language");
     return q?.pills.find((pill) => pill.lit)?.id;
   };
-  const above = { "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t" };
+  const above = { "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t", ...CONVERSATION };
   const decidedLanguage = (engine: QuestionEngine) => engine.decideForMe(above).rows.find((r) => r.key === "language");
   /* Platform: Hindi. */
   expect(litLanguage(at())).toBe("hindi");
@@ -548,7 +550,7 @@ test("answer 7: Hindi ★ is the platform default; the workspace default overrid
 });
 
 test("answer 8: a carried answer's source is \"earlier step\", with the step's name", () => {
-  const above = { "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t" };
+  const above = { "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t", ...CONVERSATION };
   const elements: Checklist = {
     filmType: "ad_film",
     step: "elements",
@@ -616,7 +618,7 @@ test("answer 3 (b): any member sets the spend limit; lifting a cap already set i
     /* Atomik and words the caller read are refused as before, whatever role the person has (rule 11, rule 14). */
     expect(() => engine.decideForMe({ ceiling: "none", "q:tone": "t" })).toThrow("Only a person can choose that answer.");
     expect(() => engine.answer("q:tone", "calm", { ceiling: "none" }, { role: "admin" })).toThrow("Only a person can choose that answer.");
-    expect(engine.decideForMe({ "q:tone": "t" }).writes.some((w) => w.key === "ceiling")).toBe(false);
+    expect(engine.decideForMe({ "q:tone": "t", ...CONVERSATION }).writes.some((w) => w.key === "ceiling")).toBe(false);
   }
 
   /* A role this workspace does not have is not an owner or an admin. */
@@ -630,7 +632,7 @@ test("answer 3 (b): any member sets the spend limit; lifting a cap already set i
 });
 
 test("answer 3 (a): a guess reads \"I assumed … · Change\" until a person confirms it; their answer reads \"from you\"; only a file's answer reads \"from the brief\", with its page", () => {
-  const above = { "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t" };
+  const above = { "q:subject": "s", "q:message": "m", "q:audience": "a", "q:tone": "t", ...CONVERSATION };
   const elements: Checklist = {
     filmType: "ad_film",
     step: "elements",

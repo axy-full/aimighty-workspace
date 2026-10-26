@@ -18,10 +18,11 @@ export type RowSource = "said" | "document" | "earlier_step" | "default" | "assu
 
 /**
  * How a row reads (R2): known = said, read from a document or carried from an earlier step; assumed = a house default or Atomik's
- * pick; open = nothing answers it yet. The line a closed row shows is MarkedRow's `line`: a carried row is known but still reads
+ * pick; open = nothing answers it yet; skipped = a conversation question the person passed over, never asked again and never
+ * guessed (owner, 25 Oct 2026: "any of them skippable"). The line a closed row shows is MarkedRow's `line`: a carried row is known but still reads
  * as a guess until a person confirms it (owner, 25 Oct 2026, answer 3).
  */
-export type RowState = "known" | "assumed" | "open";
+export type RowState = "known" | "assumed" | "open" | "skipped";
 
 /** D1's question shapes. */
 export type QuestionShape = "pick_one" | "a_b" | "yes_no" | "tap_frame" | "upload";
@@ -111,7 +112,19 @@ export type FloorRow = {
  * above the floor in its own words, one question at a time, from no list (H). The engine marks it, so a row the record holds
  * is never asked again (H: "no above-floor question repeats a row the record holds"). Keys are `q:<slug>` (film-record-schema A.2).
  */
-export type AboveFloorRow = { readonly key: string; readonly floor: false; readonly step: string };
+export type AboveFloorRow = {
+  readonly key: string;
+  readonly floor: false;
+  readonly step: string;
+  /**
+   * A question of the conversation (owner, 25 Oct 2026; SOW v2 §9 Brief): the Brief asks above the floor as a filmmaker talks about
+   * the film, one question per card, in the copy table's words, with likely answers as chips, a field for the person's own words,
+   * Skip and Decide for me. Absent: Atomik asks about the row in its own words, from no list.
+   */
+  readonly question?: QuestionCopyKey;
+  /** Likely answers the row always offers, in order (a tone's words; montage or not). Atomik's own for this film come first. */
+  readonly bank?: readonly Pill[];
+};
 
 export type ChecklistRow = FloorRow | AboveFloorRow;
 
@@ -154,7 +167,7 @@ export interface RecordView {
  * Why a row was written (film-record-schema A.2 `change_reason`). `from` names the row that caused it: the row a `carry` came
  * from, or, on a `change` that reopens a row, the row it reads whose answer changed (a new kind reopens length).
  */
-export type WriteReason = "answer" | "change" | "decide_for_me" | "carry";
+export type WriteReason = "answer" | "change" | "decide_for_me" | "carry" | "skip";
 
 /** One row the engine wrote this session, for the record's writer to commit. No time: the store stamps it. */
 export type RecordWrite = {
@@ -201,7 +214,15 @@ export type Question = {
   readonly field: boolean;
   /** The words for the field ("Other"), when the row has one. */
   readonly fieldLabel: string | null;
+  /** A conversation question may be skipped (owner, 25 Oct 2026); a floor row never is. */
+  readonly skip?: true;
 };
+
+/**
+ * Likely answers Atomik proposes for this film, by conversation row key (the hook it read in the brief, the moments it saw):
+ * supplied by the caller, never made here. Shown before the row's own bank, at most four in all, each the words it writes.
+ */
+export type Proposals = Readonly<Record<string, readonly string[]>>;
 
 /** Atomik's picks for "Decide for me", by row key: supplied by the caller, never made here. */
 export type Picks = Readonly<Record<string, string>>;

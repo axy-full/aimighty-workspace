@@ -1,7 +1,7 @@
 import { BUTTONS, QUESTIONS, STEPS } from "../copy";
 import type {
-  Answerer, CapsSet, Checklist, ChecklistRow, FloorRow, MarkedRow, Pill, Picks, PillSet, Question, RecordValue, RecordView, RecordWrite,
-  RowSource, RowState, WorkspaceDefaults,
+  AboveFloorRow, Answerer, CapsSet, Checklist, ChecklistRow, FloorRow, MarkedRow, Pill, Picks, PillSet, Proposals, Question, QuestionPill,
+  RecordValue, RecordView, RecordWrite, RowSource, RowState, WorkspaceDefaults,
 } from "./questionTypes";
 
 /**
@@ -58,6 +58,13 @@ import type {
  * person's role to be owner or admin (`Answerer`), and is refused otherwise, naming the row only. A person-only row stays a
  * person's: Atomik's pick and words the caller read are refused before the role is read.
  *
+ * The conversation (owner, 25 Oct 2026; SOW v2 §9 Brief, Part II.1): above the floor the Brief asks as a filmmaker talks about the
+ * film, never as a form. A conversation row (`question` set) is asked by `nextAbove` once the floor is closed, one question per
+ * card, in the checklist's order: at most four chips (Atomik's likely answers for this film first, then the row's own bank), a
+ * field for the person's own words, Skip and Decide for me. An answer reads "from you · Change". Skip writes one record row that
+ * says the person passed it (`skippedKey`), with no value: the row is never asked again and never reads as a guess. Decide for me
+ * closes it with Atomik's pick, as every above-floor row. A row without `question` is still Atomik's to ask in its own words.
+ *
  * Tenancy (rule 2): an engine is bound to its record's workspace and production. Every write carries both; a row the view
  * returns from another workspace is refused, never marked.
  */
@@ -75,6 +82,11 @@ const NOT_ON_LIST = "That row is not on this step's checklist.";
 const NOT_A_CHOICE = "That answer is not one of this question's choices.";
 const PERSON_ONLY = "Only a person can choose that answer.";
 const OWNER_OR_ADMIN = "Only an owner or admin can raise the spend limit.";
+const NOT_SKIPPABLE = "Only a conversation question can be skipped.";
+
+/** A question shows at most four pills (A1); a likely answer is at most this long. */
+const MAX_PILLS = 4;
+const MAX_PROPOSAL = 80;
 
 /** The longest value a row holds (film-record-schema A.2: value ≤ 2,000 chars). */
 export const MAX_VALUE = 2000;
@@ -95,6 +107,16 @@ const isSource = (value: unknown): value is RowSource => typeof value === "strin
  * never a question: it only lets a person-only row read its `decidedShows` without that row ever being written.
  */
 export const decidedKey = (step: string) => `decided:${step}`;
+
+/**
+ * The record row that says the person skipped a conversation question (value "yes", source `said`: their own act). It is not a
+ * checklist row and never a question; the row it names stays empty, is never asked again, and reads no line.
+ */
+export const skippedKey = (key: string) => `skipped:${key}`;
+
+/** A conversation row: an above-floor row with words of its own. */
+const isConversation = (row: ChecklistRow | null): row is AboveFloorRow & { question: NonNullable<AboveFloorRow["question"]> } =>
+  row !== null && !row.floor && row.question !== undefined;
 
 /**
  * A record view over plain rows: what fixtures, and the engine's own session, read. The record's store (M2) will satisfy the
@@ -151,6 +173,14 @@ export interface QuestionEngine {
   readonly floorClosed: boolean;
   /** The next one question: the first open floor row nothing it reads is waiting on, with Atomik's pick lit; null when the floor is closed. */
   next(picks?: Picks): Question | null;
+  /**
+   * The next conversation question, once the floor is closed (floor rows are asked first, G and H): the first open conversation
+   * row in the checklist's order, with Atomik's likely answers for it (`proposals`) before its own bank, at most four, none lit.
+   * Null while a floor row is open, or when no conversation row is open.
+   */
+  nextAbove(proposals?: Proposals): Question | null;
+  /** Skip a conversation question (owner, 25 Oct 2026): never asked again, never a guess. Refused on any other row. */
+  skip(key: string): QuestionEngine;
   /**
    * A person's answer to one row (source `said`), then re-marked. `also` holds other rows the same answer stated (the field's
    * words, read by the caller, can answer two rows at once). An answer that H says answers another row carries to it. `by` is
@@ -228,7 +258,10 @@ function build(
 
   /** How a value reads inside "I assumed … · Change": the pill's words, or the value itself (the field's words, Atomik's words). */
   const labelOf = (row: ChecklistRow, value: string) => {
-    if (!row.floor) return value;
+    if (!row.floor) {
+      const pill = row.bank?.find((p) => p.id === value);
+      return pill?.copy ? QUESTIONS[pill.copy] : value;
+    }
     const pill = pillsOf(row, read).pills.find((p) => p.id === value) ?? everyPillOf(row).find((p) => p.id === value);
     return pill?.inLine ? QUESTIONS[pill.inLine] : pill?.copy ? QUESTIONS[pill.copy] : value;
   };
@@ -249,6 +282,9 @@ function build(
 
   const rows: MarkedRow[] = all.map((row) => {
     const value = answered(row);
+    if (!value && isConversation(row) && read(skippedKey(row.key)) !== null) {
+      return { key: row.key, floor: false, state: "skipped", value: null, source: null, fromStep: null, line: null };
+    }
     if (!value && decided && row.floor && row.personOnly && row.decidedShows !== undefined) {
       return { key: row.key, floor: true, state: "assumed", value: row.decidedShows, source: "assumed", fromStep: null, line: lineOf(row, "assumed", row.decidedShows, "assumed") };
     }
@@ -425,9 +461,37 @@ function build(
       return build(checklist, base, [...writes, ...out], workspaceDefaults, capSet);
     },
 
+    nextAbove(proposals = {}) {
+      for (const [key, words] of Object.entries(proposals)) {
+        if (!isConversation(rowOf(key))) throw new QuestionEngineError(NOT_ON_LIST);
+        if (!Array.isArray(words) || words.some((w) => typeof w !== "string" || !w.trim() || w.trim().length > MAX_PROPOSAL)) {
+          throw new QuestionEngineError(NOT_A_CHOICE);
+        }
+      }
+      if (rows.some((row) => row.floor && row.state === "open")) return null;
+      const key = open.find((k) => isConversation(rowOf(k)));
+      if (key === undefined) return null;
+      const row = rowOf(key) as AboveFloorRow & { question: NonNullable<AboveFloorRow["question"]> };
+      const pills: QuestionPill[] = [];
+      const add = (id: string, label: string) => {
+        if (pills.length < MAX_PILLS && !pills.some((pill) => pill.id === id || pill.label === label)) pills.push({ id, label, lit: false });
+      };
+      for (const words of Object.hasOwn(proposals, key) ? proposals[key] : []) add(words.trim(), words.trim());
+      for (const pill of row.bank ?? []) add(pill.id, pill.copy ? QUESTIONS[pill.copy] : pill.id);
+      return { key, text: QUESTIONS[row.question], shape: "pick_one", pills, field: true, fieldLabel: QUESTIONS.other, skip: true };
+    },
+
+    skip(key) {
+      const row = rowOf(key);
+      if (!isConversation(row)) throw new QuestionEngineError(NOT_SKIPPABLE);
+      if (!isOpen.has(key)) return engine;
+      const out: RecordWrite[] = [{ workspaceId, productionId, key: skippedKey(key), value: "yes", source: "said", reason: "skip" }];
+      return build(checklist, base, [...writes, ...out], workspaceDefaults, capSet);
+    },
+
     mayAsk(key) {
       if (typeof key !== "string" || !ABOVE_KEY.test(key)) return false;
-      return read(key) === null;
+      return read(key) === null && read(skippedKey(key)) === null;
     },
   };
   return Object.freeze(engine);
