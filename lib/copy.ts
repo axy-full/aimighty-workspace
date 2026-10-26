@@ -242,6 +242,7 @@ export const READING = {
   unavailable: "Reading isn't available now. Nothing billed.",
   tooLarge: "Too large to read.",
   unreadable: "This file couldn't be read.",
+  encrypted: "This file is locked.",
   noSuch: "No such upload.",
   noCaller: "Only a signed-in person can read this.",
   badInput: "Name the upload by its id.",

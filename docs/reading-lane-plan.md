@@ -31,7 +31,7 @@ Open and merge 22316637.
 | Declaration and Zod input/output | `lib/reading/tool.ts` (new), in the shape of `lib/workbench/plan-step-tool.ts:18-31` |
 | MCP and the Connections page | `lib/mcp.ts` (`TOOLS`, `runTool`); `lib/shell/tools-connections.ts:62` |
 | Job | `lib/reading/job.ts` (new), an Inngest function in the pattern of `lib/workbench/development-worker.ts`; registered in `lib/workers.ts:208` and `app/api/inngest/route.ts`; events in `lib/dispatch.ts` |
-| Worker | `ops/docling-worker/` (new: Dockerfile, compose.yaml, README, egress check), copied from `ops/render-worker/`; the app's client `lib/reading/worker.ts` (new), in the pattern of `lib/astra-blender/backend.ts:31-67`; files fetched by `lib/storage.ts:682` (`presignedReadUrl`) |
+| Worker | `ops/docling-worker/` (new: Dockerfile, compose.yaml, README, egress check), copied from `ops/render-worker/`; the app's client `lib/reading/doclingClient.ts` (built; chosen by `workerFor` in `lib/reading/worker.ts`; the contract in `docs/docling-worker.md`), in the pattern of `lib/astra-blender/backend.ts:31-67`; files fetched by `lib/storage.ts:682` (`presignedReadUrl`) |
 | Stored result | under the workspace's own storage prefix (`lib/storage.ts:45`), looked up by (workspace, `uploads.sha256`), never across workspaces |
 | Tables [schema, the owner's yes] | `document_readings` and `document_blocks` in the workspace database (`lib/db.ts`); their migration plan first, as its own docs PR |
 | Routes | `app/api/reading/route.ts`, `app/api/reading/[id]/route.ts` (new) |
@@ -57,8 +57,8 @@ Each is its own PR, mostly after M2, in the order the SOW sets.
 | Name | Use | When unset |
 |---|---|---|
 | `DOCLING_ENABLED` | the switch, through `engineEnabled` (`lib/engineGate.ts:19,36`): on only for `"1"` | off |
-| `DOCLING_WORKER_URLS` | 1-3 worker origins | the tool says reading isn't available; nothing billed |
-| `DOCLING_WORKER_SECRETS` | the bearer to the worker (≥ 32 characters) | as above |
+| `DOCLING_WORKER_URL` | the worker's origin (one; a second worker waits for the second server) | the tool says reading isn't available; nothing billed |
+| `DOCLING_WORKER_SECRET` | the bearer to the worker (32 to 512 printable characters) | as above |
 | `DISPATCH_MODE`, `INNGEST_EVENT_KEY`, `INNGEST_SIGNING_KEY` | existing dispatch | as today |
 
 ## Estimate (working days)

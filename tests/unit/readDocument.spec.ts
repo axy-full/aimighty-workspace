@@ -144,9 +144,14 @@ test("a bad block, a page out of turn, a bad open, a timeout or no reader fails 
   expect(thrown).toMatchObject({ state: "failed", errorCode: "unreadable" });
   expect(JSON.stringify(thrown)).not.toContain(SENTINEL);
   expect(await read({ uploadId: "up_pdf" }, ALICE, { worker: null })).toEqual({ state: "failed", errorCode: "worker_unavailable", message: "Reading isn't available now. Nothing billed." });
-  /* Off ENGINE_MOCK there is no reader yet. */
-  delete process.env.ENGINE_MOCK;
-  try { expect(await read({ uploadId: "up_pdf" })).toMatchObject({ state: "failed", errorCode: "worker_unavailable" }); } finally { process.env.ENGINE_MOCK = "1"; }
+  /* Off ENGINE_MOCK, with no Docling worker set up, there is no reader. */
+  const workerEnv = { url: process.env.DOCLING_WORKER_URL, secret: process.env.DOCLING_WORKER_SECRET };
+  delete process.env.ENGINE_MOCK; delete process.env.DOCLING_WORKER_URL; delete process.env.DOCLING_WORKER_SECRET;
+  try { expect(await read({ uploadId: "up_pdf" })).toMatchObject({ state: "failed", errorCode: "worker_unavailable" }); } finally {
+    process.env.ENGINE_MOCK = "1";
+    if (workerEnv.url !== undefined) process.env.DOCLING_WORKER_URL = workerEnv.url;
+    if (workerEnv.secret !== undefined) process.env.DOCLING_WORKER_SECRET = workerEnv.secret;
+  }
   /* Over 2 GiB is never read. */
   expect(await read({ uploadId: "up_huge" }, ALICE, { worker: worker({}) })).toMatchObject({ state: "failed", errorCode: "too_large" });
 });
@@ -191,4 +196,27 @@ test("the split itself: parts end at whitespace inside the limit, never between 
   for (const part of splitText(emoji, 2)) expect(/^[\uDC00-\uDFFF]/.test(part) || /[\uD800-\uDBFF]$/.test(part)).toBe(false);
   expect(splitText(emoji, 2).join("")).toBe(emoji);
   expect(() => splitText("x", 1)).toThrow(RangeError);
+});
+
+test("through the Docling worker's client: served, it reads page by page; not there, 'Nothing billed'; a locked file says so", async () => {
+  process.env.DOCLING_ENABLED = "1";
+  const { doclingWorker } = await import("../../lib/reading/doclingClient");
+  const config = { url: "http://docling.internal:8080", secret: "s".repeat(40) };
+  const answers = (...bodies: [unknown, number][]) => {
+    const queue = [...bodies];
+    return (async () => {
+      const [body, status] = queue.shift()!;
+      if (status === 0) throw new TypeError("fetch failed");
+      return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+  };
+  const via = (fetchImpl: typeof fetch) => doclingWorker(config, { fileUrl: async () => "https://storage.example/signed", fetch: fetchImpl });
+  const served = await read({ uploadId: "up_pdf" }, ALICE, {
+    worker: via(answers([{ session: "sess_0123456789", pages: 1, geometry: "page", readerVersion: "docling-test" }, 200], [{ page: 1, blocks: [block({ text: "Read." })] }, 200])),
+  });
+  expect(served).toMatchObject({ state: "done", pages: 1, readerVersion: "docling-test", stored: false, blocks: [{ page: 1, seq: 0, text: "Read." }] });
+  expect(await read({ uploadId: "up_pdf" }, ALICE, { worker: via(answers([null, 0])) }))
+    .toEqual({ state: "failed", errorCode: "worker_unavailable", message: "Reading isn't available now. Nothing billed." });
+  expect(await read({ uploadId: "up_pdf" }, ALICE, { worker: via(answers([{ error: "encrypted" }, 422])) }))
+    .toEqual({ state: "failed", errorCode: "encrypted", message: "This file is locked." });
 });
