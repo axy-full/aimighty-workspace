@@ -1,8 +1,11 @@
 import { margins } from "./creditTerms";
 
-/** Compatibility only for takes predating metering. Changing the current
- * credit rate must not reprice those historical rows. */
-function historicalCreditsExpr(g = ""): string {
+/**
+ * The figure of a take made before metering, at TODAY's margin table: used to freeze a take's figure into `estimated_credits` the first time it is read
+ * (lib/estimatedCredits.ts), and by nothing else. No reader may call this: a take with no receipt reads its frozen figure, so a change to the margin
+ * table (CREDIT_MARGINS) can never reprice history (owner, 14 Oct 2026: "pre-metering takes marked estimated, no repricing").
+ */
+export function freezeEstimatesSql(g = ""): string {
   const p = g ? `${g}.` : "";
   const m = margins();
   const classes = new Set(["*", "identity-training", "elevenlabs", "text"]);
@@ -24,10 +27,10 @@ function historicalCreditsExpr(g = ""): string {
   return `CASE WHEN ${cost} > 0 THEN MAX(1, CAST(${x} AS INTEGER) + (${x} > CAST(${x} AS INTEGER))) ELSE 0 END`;
 }
 
-/** A receipt is immutable pricing history. Unmetered legacy takes retain their original terms. */
+/** A receipt is immutable pricing history. A take made before metering has no receipt: it reads the figure frozen for it (never one computed now), and a take with neither reads 0. */
 export function billedCreditsExpr(g = ""): string {
   const id = g ? `${g}.id` : "generations.id";
-  return `COALESCE((SELECT credits FROM credit_receipts WHERE event_id=${id}), (${historicalCreditsExpr(g)}))`;
+  return `COALESCE((SELECT credits FROM credit_receipts WHERE event_id=${id}), (SELECT credits FROM estimated_credits WHERE gen_id=${id}), 0)`;
 }
 
 export const billedCreditsSum = (g = ""): string => `COALESCE(SUM(${billedCreditsExpr(g)}), 0)`;

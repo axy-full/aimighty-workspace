@@ -1,11 +1,20 @@
 import { db, ready } from "./db";
 import { platformDb, platformReady } from "./platform";
 import { requireTenant } from "./tenant";
+import { ensureEstimatedCredits } from "./estimatedCredits";
 
 /** Replicate only customer receipts into the tenant DB. The meter remains authoritative.
  * Revisions are allocated by the database, not a server clock. A missed write is
  * replayed on the next read; an older replica cannot overwrite a newer receipt. */
 export async function syncCreditReceipts(): Promise<void> {
+  /* The takes with a cost and no receipt have their figure frozen once, whether or not the platform answered (lib/estimatedCredits.ts): a cap never reads 0 for a costed take. */
+  let failure: unknown = null;
+  try { await copyReceipts(); } catch (error) { failure = error; }
+  try { await ensureEstimatedCredits(); } catch (error) { failure ??= error; }
+  if (failure) throw failure;
+}
+
+async function copyReceipts(): Promise<void> {
   const ws = requireTenant();
   await ready();
   await platformReady();

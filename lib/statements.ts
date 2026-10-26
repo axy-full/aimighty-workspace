@@ -2,7 +2,9 @@ import { db, ready } from "./db";
 import { csvCell } from "./csvCell";
 import { requireTenant } from "./tenant";
 import { creditsApply } from "./credits";
-import { billCreditsWith, creditUsd, marginFor, marginKeyOf } from "./creditTerms";
+import { creditUsd } from "./creditTerms";
+import { syncCreditReceipts } from "./creditReceipts";
+import { billedCreditsExpr } from "./creditSql";
 import { platformDb, platformReady } from "./platform";
 import { cycleBounds } from "./cycle";
 import { modelLabel } from "./models";
@@ -154,6 +156,8 @@ type GenRow = {
   id: string; created_at: number; kind: string | null; model: string; status: string; version: number | null; title: string | null;
   prompt: string; cost_usd: number | null; refine_cost_usd: number | null; params: string | null; project_id: string | null; shot_id: string | null;
   project_name: string | null; shot_code: string | null; shot_title: string | null;
+  /** The take's credits as this workspace holds them: its receipt, else the figure frozen for it (lib/estimatedCredits.ts), else 0. */
+  local_credits: number | null;
 };
 type MeterRow = { id: string; kind: string; engine: string | null; model: string; status: string; billed_credits: number | null; engine_cost_usd: number | null; project_id: string | null; shot_id: string | null; created_at: number };
 
@@ -181,12 +185,14 @@ export async function statementFor(month: string, projectId: string | null): Pro
   const range = monthRange(month);
   if (!range) return null;
   await ready();
+  /* The receipts are all in and the takes made before metering have their figure frozen (lib/estimatedCredits.ts). */
+  await syncCreditReceipts().catch(() => { /* without the platform record the statement still itemises, and a take with no frozen figure reads 0 */ });
   const ws = requireTenant();
   const inCredits = creditsApply(ws);
   const unit: StatementUnit = inCredits ? "cr" : "$";
   const gens = await db().execute({
     sql: `SELECT g.id, g.created_at, g.kind, g.model, g.status, g.version, g.title, g.prompt, g.cost_usd, g.refine_cost_usd, g.params,
-                 g.project_id, g.shot_id, p.name AS project_name, s.code AS shot_code, s.title AS shot_title
+                 g.project_id, g.shot_id, p.name AS project_name, s.code AS shot_code, s.title AS shot_title, ${billedCreditsExpr("g")} AS local_credits
           FROM generations g LEFT JOIN projects p ON p.id = g.project_id LEFT JOIN shots s ON s.id = g.shot_id
           WHERE g.created_at >= ? AND g.created_at < ? ${projectId ? "AND g.project_id = ?" : ""}
           ORDER BY g.created_at ASC`,
@@ -212,7 +218,8 @@ export async function statementFor(month: string, projectId: string | null): Pro
     const kind = (r.kind === "image" || r.kind === "audio" ? r.kind : "video") as RawLine["kind"];
     const usd = Number(r.cost_usd ?? 0) + Number(r.refine_cost_usd ?? 0);
     const m = meter.get(String(r.id));
-    const credits = inCredits ? (m && m.billed_credits != null ? Number(m.billed_credits) : billCreditsWith(usd, marginFor(marginKeyOf(kind, r.model)), 0.10)) : 0;
+    /* The meter's figure; else the take's receipt, else the figure frozen for it, never one worked out now at today's margins. */
+    const credits = inCredits ? (m && m.billed_credits != null ? Number(m.billed_credits) : Number(r.local_credits ?? 0)) : 0;
     if (!(credits > 0) && !(usd > 0) && r.status !== "succeeded") continue;
     let p: { resolution?: string; duration?: number } = {};
     try { p = JSON.parse(r.params ?? "{}"); } catch { p = {}; }
