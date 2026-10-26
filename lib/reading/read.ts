@@ -12,6 +12,7 @@ import {
 import { splitText } from "./split";
 import { stubStore, type ReadingStore } from "./store";
 import { workerFor, type ReadingWorker } from "./worker";
+import { DoclingError } from "./doclingClient";
 
 /**
  * `read_document`: a brief (any upload) read page by page into blocks with a page and a box (docs/reading-lane-plan.md, Step 2;
@@ -52,7 +53,7 @@ export type ReadDeps = {
 };
 
 const failed = (errorCode: ReadingErrorCode): ReadDocumentOutput =>
-  ({ state: "failed", errorCode, message: errorCode === "worker_unavailable" ? READING.unavailable : errorCode === "too_large" ? READING.tooLarge : READING.unreadable });
+  ({ state: "failed", errorCode, message: errorCode === "worker_unavailable" ? READING.unavailable : errorCode === "too_large" ? READING.tooLarge : errorCode === "encrypted" ? READING.encrypted : READING.unreadable });
 
 /* A worker call that ends when its signal does, whatever the worker does with the signal. */
 function bounded<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -89,7 +90,8 @@ export async function readDocument(raw: unknown, deps: ReadDeps = {}): Promise<R
 
   let readingId: string | null = null;
   const end = async (code: ReadingErrorCode) => { await keep.finish(readingId, { ok: false, errorCode: code }); return failed(code); };
-  const codeOf = (error: unknown): ReadingErrorCode => (error instanceof DOMException && error.name === "TimeoutError" ? "timeout" : "unreadable");
+  const codeOf = (error: unknown): ReadingErrorCode =>
+    error instanceof DOMException && error.name === "TimeoutError" ? "timeout" : error instanceof DoclingError ? error.code : "unreadable";
 
   let opened;
   try {
