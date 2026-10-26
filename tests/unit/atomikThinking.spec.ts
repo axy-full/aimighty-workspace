@@ -361,9 +361,14 @@ test("the Treatment writer: unset, a scene rewrite is refused before anything is
     process.env.TREATMENT_WRITER_MODEL = served.slice("openai/".length);
     const { textJobPick } = await import("../../lib/atomikThinking");
     expect(await inTenant(ws, () => textJobPick("treatment"))).toMatchObject({ model: served });
+    /* The breakdown of a brief or script is the same writer's prose (owner, 25 Oct 2026; lib/reading/breakdown.ts). */
+    expect(await inTenant(ws, () => textJobPick("breakdown"))).toEqual(await inTenant(ws, () => textJobPick("treatment")));
     /* An id the catalogue does not serve is refused the same way, in its own plain words. */
     process.env.TREATMENT_WRITER_MODEL = "gpt-not-a-served-model";
     await expect(inTenant(ws, () => textJobPick("treatment"))).rejects.toThrow("The Treatment writer isn't connected right now. Nothing billed.");
+    await expect(inTenant(ws, () => textJobPick("breakdown"))).rejects.toThrow("The Treatment writer isn't connected right now. Nothing billed.");
+    delete process.env.TREATMENT_WRITER_MODEL;
+    await expect(inTenant(ws, () => textJobPick("breakdown"))).rejects.toThrow("The Treatment writer is not set up. Nothing billed.");
   } finally { if (prior === undefined) delete process.env.TREATMENT_WRITER_MODEL; else process.env.TREATMENT_WRITER_MODEL = prior; }
 });
 
