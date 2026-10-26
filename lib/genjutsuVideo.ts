@@ -16,6 +16,7 @@ import { workbenchTransaction } from "./workbench/records";
 import { fetchPublicConsumerVideoBytes } from "./workbench/product-fetch";
 import { inspectConsumerVideoOriginal } from "./higgsfield-consumer/video-original";
 import { storeVideoBytes, readVideoBytesLimited } from "./storage";
+import { prepareOutput } from "./storage/outputMetadata";
 import { quotaVerdict, workspaceLimits } from "./limits";
 import { uploadReservationsReady } from "./uploadReservations";
 import { engineMock, fixtureUrl } from "./mock";
@@ -91,7 +92,11 @@ export async function reconcileGenjutsuVideo(id: string): Promise<void> {
         }
         if (!state.videoUrl) throw new Error("No original");
         reportedUsd = typeof state.costUsd === "number" ? state.costUsd : null;
-        const bytes = engineMock() && state.videoUrl === fixtureUrl("clip.mp4") ? await fixtureBytes("clip.mp4") : (await fetchPublicConsumerVideoBytes(state.videoUrl)).bytes;
+        const delivered = engineMock() && state.videoUrl === fixtureUrl("clip.mp4") ? await fixtureBytes("clip.mp4") : (await fetchPublicConsumerVideoBytes(state.videoUrl)).bytes;
+        /* The output-metadata seam runs here, once, before the receipt is taken, so the receipt (sha256 and length),
+           the quota figure and the stored original are the same bytes. storeVideoBytes passes them through the seam
+           again, which changes nothing: the rewrite is idempotent. At keep (the default) both passes are the identity. */
+        const bytes = prepareOutput("video", delivered, { id }).bytes;
         const metadata = await inspectConsumerVideoOriginal(bytes);
         const candidate: Original = { ...metadata, bytes: bytes.length, sha256: hash(bytes), requestId: handle.ref };
         if (original && (candidate.bytes !== original.bytes || candidate.sha256 !== original.sha256)) throw new Error("Original changed");
