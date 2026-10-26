@@ -182,6 +182,8 @@ export const QUESTIONS = {
   materialMedia: "Photos or clips",
   ceiling: "A spend limit for this film?",
   ceilingNone: "No limit",
+  /** The pill whose field takes a figure; the figure becomes the production's cap, never the record's. */
+  ceilingOther: "Other",
   /** "No limit" as it reads inside "I assumed … · Change". */
   noLimit: "no limit",
   /**

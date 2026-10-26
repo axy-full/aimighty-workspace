@@ -136,10 +136,11 @@ const BRIEF_FLOOR: readonly FloorRow[] = [
     question: "ceiling",
     shape: "pick_one",
     /* The record holds a reference to the production's cap, never a figure (film-record-schema A.0, A.2): "none" is
-       {"cap":"none"}. H's other two pills, 200 cr and 500 cr, are SAMPLES awaiting the owner's ruling: a figure cannot be a
-       reference without a way to set the production's cap from here, which does not exist, so they are wired to nothing and
-       written nowhere. No field: no free-text figure. */
-    pills: pillSet("none", { id: "none", copy: "ceilingNone", inLine: "noLimit" }),
+       {"cap":"none"}, "production" is {"cap":"production"}. Other (owner, 25 Oct 2026, answer 4): its figure is set as the
+       production's own cap through the money path (lib/caps.ts setCapFromBrief), and only once that has landed does the row
+       record "production". The figure never enters the engine or the record, so the row has no field. H's sample pills (200 cr,
+       500 cr) wait for the rate card and are wired to nothing. */
+    pills: pillSet("none", { id: "none", copy: "ceilingNone", inLine: "noLimit" }, { id: "production", copy: "ceilingOther" }),
     field: false,
     /* Only a person sets a spend limit (rule 11, rule 14): "Decide for me" never writes it, and a house default never answers
        it (film-record-schema question 7). Left unset, it means no limit. The owner, 24 Oct 2026: the platform default is No
@@ -150,7 +151,7 @@ const BRIEF_FLOOR: readonly FloorRow[] = [
     decidedShows: "none",
     proposedBy: ["house_default"],
     /* Any member may set the spend limit at the Brief; lifting a cap already set is an owner's or an admin's (owner, 25 Oct 2026,
-       answer 3 (b)). Of today's choices, No limit is the one that lifts a cap. */
+       answer 3 (b)). Of the pills, No limit lifts a cap; Other's figure is judged where it is set (lib/caps.ts setCapFromBrief). */
     raises: ["none"],
     answeredBy: ["workspace_monthly_limit"],
     sets: ["production_cap"],
