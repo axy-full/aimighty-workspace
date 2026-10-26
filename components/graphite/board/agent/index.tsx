@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, type ComponentType } from "react";
+import { useEffect, useLayoutEffect, useState, type ComponentType } from "react";
 import { useShell } from "@/lib/shell/state";
 import { DOCK_WIDTH } from "@/lib/board/geometry";
 import type { BoardAgentView } from "@/lib/board/types";
@@ -82,8 +82,9 @@ export const DOCK_PANEL = true;
 export const BoardAgentDock: ComponentType<BoardAgentDockProps> = function BoardAgentDock({ ctx, open, onOpenChange }) {
   const shell = useShell();
   const { setDockRight } = shell;
-  /* Make sits beside the dock, never under it (the shell's --board-dock). */
-  useEffect(() => {
+  /* Make sits beside the dock, never under it (the shell's --board-dock). Told before paint, so no frame shows Make at the
+   * old width while the dock has already opened. */
+  useLayoutEffect(() => {
     setDockRight(open ? DOCK_WIDTH.open : DOCK_WIDTH.closed);
     return () => setDockRight(0);
   }, [open, setDockRight]);
