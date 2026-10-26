@@ -26,7 +26,7 @@ Both calls are `POST`, JSON both ways, with `Authorization: Bearer <secret>`. Re
 **Answer (200):** `{ session, pages, geometry, readerVersion }`.
 
 - `session` matches `[A-Za-z0-9_-]{8,128}`. It names this file's reading on the worker.
-- `pages` is at least 1.
+- `pages` is at least 1. (The per-file page limit waits for the owner's word; until then a file is read to its last page.)
 - `geometry` is `page`, or `none` for a file without pages, which is page 1 (decision 3 in `docs/reading-tables-schema.md`).
 - `readerVersion` is at most 80 characters.
 
@@ -41,7 +41,7 @@ Both calls are `POST`, JSON both ways, with `Authorization: Bearer <secret>`. Re
 - `text`;
 - `confidence`: 0 to 1, or null.
 
-The app splits long text itself (decision 2). Every answer is Zod-checked (`workerOpened`, `workerPage`), and a page that fails the check fails the reading as `bad_block`.
+The app splits long text itself (decision 2). Every answer is Zod-checked (`workerOpened`, `workerPage`): an open answer or a page that is not the shape fails the reading as `bad_block`. An answer over 16 MiB is not read.
 
 ## Failures
 
@@ -49,9 +49,10 @@ The app shows a code, never the worker's words.
 
 | Worker answers | App's code | Shown |
 |---|---|---|
-| Unreachable; any 5xx; 401, 403 or 404 | `worker_unavailable` | "Reading isn't available now. Nothing billed." |
+| Unreachable; any 5xx; 401, 403, 404, 408 or 429; the app could not sign the file's URL | `worker_unavailable` | "Reading isn't available now. Nothing billed." |
 | 422 `{ "error": "encrypted" }` | `encrypted` | "This file is locked." |
-| 422 `{ "error": "unreadable" }`, any other 4xx, a 200 that is not the shape | `unreadable` | "This file couldn't be read." |
+| 422 `{ "error": "unreadable" }`; any other 4xx; an open answer with no session; an answer over 16 MiB | `unreadable` | "This file couldn't be read." |
+| An open answer or a page that is not the shape | `bad_block` | "This file couldn't be read." |
 | No answer within the page's time (`PAGE_MS`) | `timeout` | "This file couldn't be read." |
 
 No error, log line or answer carries the secret, the signed URL or the file's text.

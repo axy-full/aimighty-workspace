@@ -20,6 +20,29 @@ import type { ReadingWorker } from "./worker";
 export type DoclingConfig = { readonly url: string; readonly secret: string };
 
 const SECRET = /^[\x21-\x7e]{32,512}$/;
+/** The largest answer the app takes from the worker, in bytes: a page past it fails, so a worker can never fill the app's memory. */
+export const MAX_ANSWER_BYTES = 16 * 1024 * 1024;
+
+/** The answer's body as JSON, read up to `MAX_ANSWER_BYTES`; null when it is not JSON; a DoclingError past the cap. */
+async function boundedJson(response: Response): Promise<unknown> {
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_ANSWER_BYTES) throw new DoclingError("unreadable");
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_ANSWER_BYTES) { await reader.cancel().catch(() => {}); throw new DoclingError("unreadable"); }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.byteLength; }
+  try { return JSON.parse(new TextDecoder().decode(bytes)); } catch { return null; }
+}
 
 export function doclingConfig(env: Readonly<Record<string, string | undefined>> = process.env): DoclingConfig | null {
   const raw = (env.DOCLING_WORKER_URL ?? "").trim();
@@ -69,17 +92,19 @@ export function doclingWorker(config: DoclingConfig, deps: DoclingDeps): Reading
       if (signal.aborted) throw error;
       throw new DoclingError("worker_unavailable");
     }
-    let json: unknown = null;
-    try { json = await response.json(); } catch { /* an answer that is not JSON is checked below as nothing */ }
+    const json = await boundedJson(response);
     if (response.ok) return json;
     const said = refusal.safeParse(json);
     if (response.status === 422 && said.success) throw new DoclingError(said.data.error);
-    throw new DoclingError(response.status >= 500 || response.status === 401 || response.status === 403 || response.status === 404 ? "worker_unavailable" : "unreadable");
+    const notServing = response.status >= 500 || [401, 403, 404, 408, 429].includes(response.status);
+    throw new DoclingError(notServing ? "worker_unavailable" : "unreadable");
   };
 
   return {
     async open(file, signal): Promise<WorkerOpened> {
-      const fileUrl = await deps.fileUrl(file);
+      /* The signed URL is ours to make: a storage that cannot make one is reading not being available, not a bad file. */
+      let fileUrl: string;
+      try { fileUrl = await deps.fileUrl(file); } catch { throw new DoclingError("worker_unavailable"); }
       const answer = await call("/v1/open", { fileUrl, sha256: file.sha256, mime: file.mime, bytes: file.bytes }, signal);
       const head = opened.safeParse(answer);
       if (!head.success) throw new DoclingError("unreadable");

@@ -144,9 +144,14 @@ test("a bad block, a page out of turn, a bad open, a timeout or no reader fails 
   expect(thrown).toMatchObject({ state: "failed", errorCode: "unreadable" });
   expect(JSON.stringify(thrown)).not.toContain(SENTINEL);
   expect(await read({ uploadId: "up_pdf" }, ALICE, { worker: null })).toEqual({ state: "failed", errorCode: "worker_unavailable", message: "Reading isn't available now. Nothing billed." });
-  /* Off ENGINE_MOCK there is no reader yet. */
-  delete process.env.ENGINE_MOCK;
-  try { expect(await read({ uploadId: "up_pdf" })).toMatchObject({ state: "failed", errorCode: "worker_unavailable" }); } finally { process.env.ENGINE_MOCK = "1"; }
+  /* Off ENGINE_MOCK, with no Docling worker set up, there is no reader. */
+  const workerEnv = { url: process.env.DOCLING_WORKER_URL, secret: process.env.DOCLING_WORKER_SECRET };
+  delete process.env.ENGINE_MOCK; delete process.env.DOCLING_WORKER_URL; delete process.env.DOCLING_WORKER_SECRET;
+  try { expect(await read({ uploadId: "up_pdf" })).toMatchObject({ state: "failed", errorCode: "worker_unavailable" }); } finally {
+    process.env.ENGINE_MOCK = "1";
+    if (workerEnv.url !== undefined) process.env.DOCLING_WORKER_URL = workerEnv.url;
+    if (workerEnv.secret !== undefined) process.env.DOCLING_WORKER_SECRET = workerEnv.secret;
+  }
   /* Over 2 GiB is never read. */
   expect(await read({ uploadId: "up_huge" }, ALICE, { worker: worker({}) })).toMatchObject({ state: "failed", errorCode: "too_large" });
 });

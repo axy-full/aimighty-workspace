@@ -95,3 +95,23 @@ test("a page before the file is open is refused; a timeout is left for the lane 
   const slow = doclingWorker(CONFIG, { fileUrl: async () => SIGNED, fetch: fakeFetch([() => { stop.abort(); throw timeout; }]).fn });
   await expect(slow.open(FILE, stop.signal)).rejects.toBe(timeout);
 });
+
+test("the worker can never fill the app's memory: an answer over 16 MiB is not read; a storage that cannot sign is 'not available'", async () => {
+  const { MAX_ANSWER_BYTES } = await import("../../lib/reading/doclingClient");
+  const huge = () => new Response(new ReadableStream({
+    start(c) { const chunk = new Uint8Array(1024 * 1024).fill(32); for (let i = 0; i <= MAX_ANSWER_BYTES / chunk.byteLength; i++) c.enqueue(chunk); c.close(); },
+  }), { status: 200 });
+  const declared = () => new Response("{}", { status: 200, headers: { "content-length": String(MAX_ANSWER_BYTES + 1) } });
+  for (const answer of [huge, declared]) {
+    const worker = doclingWorker(CONFIG, { fileUrl: async () => SIGNED, fetch: fakeFetch([answer]).fn });
+    await expect(worker.open(FILE, signal())).rejects.toMatchObject({ code: "unreadable" });
+  }
+  const unsignable = doclingWorker(CONFIG, { fileUrl: async () => { throw new Error(`storage down ${SIGNED}`); }, fetch: fakeFetch([]).fn });
+  const error = await unsignable.open(FILE, signal()).then(() => null, (e: Error) => e);
+  expect(error).toMatchObject({ code: "worker_unavailable" });
+  expect(String(error?.message)).not.toContain("storage.example");
+  for (const status of [408, 429]) {
+    const busy = doclingWorker(CONFIG, { fileUrl: async () => SIGNED, fetch: fakeFetch([() => json({}, status)]).fn });
+    await expect(busy.open(FILE, signal()), String(status)).rejects.toMatchObject({ code: "worker_unavailable" });
+  }
+});
