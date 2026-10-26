@@ -24,8 +24,11 @@ export async function workspaceThinking(): Promise<Thinking> {
   }
 }
 
-/** A text job: one of Atomik's turns, or the Treatment's prose, which its own writer writes (lib/atomikModelPolicy › treatmentWriter). */
-export type TextJobTurn = AtomikTurn | "treatment";
+/**
+ * A text job: one of Atomik's turns, or prose the Treatment writer writes (lib/atomikModelPolicy › treatmentWriter): the Treatment's,
+ * and the breakdown of a brief or script (owner, 25 Oct 2026; lib/reading/breakdown.ts).
+ */
+export type TextJobTurn = AtomikTurn | "treatment" | "breakdown";
 
 /**
  * The model and effort a text job runs at: the setting's for an Atomik turn, the Treatment writer's for the Treatment's prose.
@@ -34,7 +37,7 @@ export type TextJobTurn = AtomikTurn | "treatment";
  */
 export async function textJobPick(turn: TextJobTurn): Promise<{ model: string; effort?: string }> {
   const served = (await catalog()).filter((m) => m.type === "language");
-  if (turn === "treatment") {
+  if (turn === "treatment" || turn === "breakdown") {
     const writer = treatmentWriter();
     if (!writer) throw new TreatmentWriterOff();
     const entry = served.find((m) => m.id === writer.model);

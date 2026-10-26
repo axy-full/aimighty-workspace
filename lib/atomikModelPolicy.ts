@@ -292,8 +292,9 @@ export function savedAtomikChoice(saved: string | null | undefined): { model: st
 /* ── The Treatment writer (Amendment (iii) §E, 22 Oct 2026, 22:47) ─────────────────────────── */
 
 /**
- * TREATMENT_WRITER: the one job OpenAI keeps. It writes the Treatment deck's prose and nothing else; Claude, at the Thinking setting,
- * composes everything else. Set by the owner: `TREATMENT_WRITER_MODEL` (an OpenAI id, "openai/<id>" or a bare "gpt-…") and
+ * TREATMENT_WRITER: the one job OpenAI keeps. It writes the Treatment deck's prose and the breakdown of a brief or script (owner,
+ * 25 Oct 2026: the breakdown's prose is the same writer's), and nothing else; Claude, at the Thinking setting, composes everything
+ * else and checks the breakdown against its source. Set by the owner: `TREATMENT_WRITER_MODEL` (an OpenAI id, "openai/<id>" or a bare "gpt-…") and
  * `TREATMENT_WRITER_EFFORT` (a named effort; default "high", and a value that is not one reads as it). Read when asked, never at start.
  * Unset, or an id outside the OpenAI family: null, and the Treatment's prose is refused before anything is quoted or charged.
  */

@@ -245,6 +245,7 @@ export const READING = {
   noSuch: "No such upload.",
   noCaller: "Only a signed-in person can read this.",
   badInput: "Name the upload by its id.",
+  breakdownFailed: "The breakdown couldn't be written. Nothing billed.",
 } as const;
 
 /** The whole table, by section; the strings test walks it. */
